@@ -21,14 +21,15 @@ background_subtraction:
   detect_shadows: true
   learning_rate: -1  # -1 for automatic, or 0.001-0.1
 
-# Morphological Processing
-morphology:
+# Foreground Mask Post-Processing
+# Pipeline: Erosion -> Dilation -> Gaussian Blur -> Closing -> Threshold
+mask_processing:
   enable: true
-  kernel_size: 5  # 3, 5, 7, 9, etc.
-  kernel_shape: "rect"  # Options: rect, ellipse, cross
-  use_gaussian_blur: true
-  gaussian_kernel_size: 3
-  threshold_value: 130
+  kernel_size: 5  # Morphological kernel size: 3, 5, 7, 9 (default: 5)
+  erosion_iterations: 1
+  dilation_iterations: 1
+  gaussian_blur_kernel: 3  # Must be odd: 3, 5, 7 (default: 3)
+  threshold_value: 130  # Binary threshold: 100-150 (default: 130)
 
 # Object Detection
 object_detection:

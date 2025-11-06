@@ -258,62 +258,7 @@ Function: `foreground_mask = algorithm.apply(frame)`
 
 ### 4.7 Foreground Mask Post-Processing (OpenCV)
 
-#### 4.7.1 Binary Threshold
-Function: `cv2.threshold(mask, threshold_value, max_value, threshold_type)`
-- **threshold_value**: 127 or 128 (to remove shadows if present)
-- **max_value**: 255
-- **threshold_type**: `cv2.THRESH_BINARY`
-- **Purpose**: Convert grayscale mask to pure binary (0 or 255)
-- Alternative: Use mask comparison: `binary_mask = mask > 127`
-
-#### 4.7.2 Morphological Operations
-
-**Kernel Creation:**
-Function: `cv2.getStructuringElement(shape, ksize)`
-- **shape**:
-  - `cv2.MORPH_RECT`: Rectangular kernel
-  - `cv2.MORPH_ELLIPSE`: Elliptical kernel (better for circular objects)
-  - `cv2.MORPH_CROSS`: Cross-shaped kernel
-- **ksize**: Tuple (width, height) - typically (3,3), (5,5), (7,7), etc.
-
-**Operations Sequence:**
-
-1. **Opening** (Remove noise/small objects)
-   - Function: `cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations)`
-   - Alternative: Erosion then dilation manually
-     - `cv2.erode(mask, kernel, iterations)`
-     - `cv2.dilate(eroded, kernel, iterations)`
-   - **Purpose**: Removes small white noise pixels
-   - **Kernel size**: 3×3 or 5×5
-   - **Iterations**: 1-2
-
-2. **Closing** (Fill holes in objects)
-   - Function: `cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations)`
-   - Alternative: Dilation then erosion manually
-     - `cv2.dilate(mask, kernel, iterations)`
-     - `cv2.erode(dilated, kernel, iterations)`
-   - **Purpose**: Fills small black holes inside white regions
-   - **Kernel size**: 5×5 or 7×7
-   - **Iterations**: 1-2
-
-3. **Dilation** (Optional, to slightly expand objects)
-   - Function: `cv2.dilate(mask, kernel, iterations)`
-   - **Purpose**: Expand foreground objects
-   - **Kernel size**: 3×3
-   - **Iterations**: 1
-
-#### 4.7.3 Recommended Kernel Configurations
-- **Small kernel** (3×3 or 5×5): For fine details and small objects
-- **Medium kernel** (7×7 or 9×9): Standard processing, good default
-- **Large kernel** (11×11 or 15×15): Aggressive filtering, merge nearby objects
-
-#### 4.7.4 Shadow Removal
-If MOG2/KNN shadow detection is enabled:
-- Option 1: Threshold at 127 to remove shadows (treat as background)
-- Option 2: Threshold at 64 to include shadows as foreground
-- Recommended: Remove shadows for cleaner detection
-
-#### 4.7.5 Alternative Cleanup Sequence (Recommended Pipeline)
+This is the recommended pipeline for cleaning the foreground mask:
 
 **Complete mask cleanup workflow:**
 
@@ -391,11 +336,26 @@ fgMask = cv2.morphologyEx(fgMask, cv2.MORPH_CLOSE, kernel)
 _, fgMask = cv2.threshold(fgMask, 130, 255, cv2.THRESH_BINARY)
 ```
 
-**Advantages of this approach:**
-- Gaussian blur adds noise reduction beyond morphological ops
+**Kernel Size Configuration:**
+- **Small kernel** (3×3): For fine details and small objects
+- **Default kernel** (5×5): Good general-purpose size (recommended)
+- **Large kernel** (7×7 or 9×9): For aggressive filtering, merge nearby objects
+
+**Gaussian Blur Kernel:**
+- Use small odd values: (3, 3) or (5, 5)
+- Larger values create more smoothing
+
+**Threshold Value:**
+- Default: 130 (stricter than standard 127)
+- Lower values (100-127): More permissive, more foreground pixels
+- Higher values (130-150): Stricter, fewer false positives
+
+**Advantages of this pipeline:**
+- Gaussian blur adds noise reduction beyond morphological operations
 - Sequence is optimized: removes noise first, then smooths, then finalizes
 - Threshold value of 130 is stricter, reducing false positives
 - Works well with both OpenCV and bgslibrary outputs
+- Simple and effective for most scenarios
 
 ---
 
@@ -973,15 +933,18 @@ background_subtraction:
   # BGSLibrary note: Uses internal defaults, no configuration needed
 ```
 
-#### Morphological Processing Section
+#### Mask Post-Processing Section
 ```
-morphology:
-  enable: boolean
-  open_kernel_size: integer (3, 5, 7, ...)
-  close_kernel_size: integer (3, 5, 7, ...)
-  kernel_shape: "rect" | "ellipse" | "cross"
-  iterations: integer (1-3)
+mask_processing:
+  enable: boolean (default: true)
+  kernel_size: integer (3, 5, 7, 9, default: 5)
+  erosion_iterations: integer (default: 1)
+  dilation_iterations: integer (default: 1)
+  gaussian_blur_kernel: integer (3, 5, 7, must be odd, default: 3)
+  threshold_value: integer (100-150, default: 130)
 ```
+
+Pipeline sequence: Erosion → Dilation → Gaussian Blur → Closing → Threshold
 
 #### Object Detection Section
 ```

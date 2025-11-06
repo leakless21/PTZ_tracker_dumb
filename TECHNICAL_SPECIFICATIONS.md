@@ -92,27 +92,159 @@ The system follows a pipeline architecture with the following stages:
 
 ## 4. BACKGROUND SUBTRACTION MODULE
 
-### 4.1 Algorithm Selection
-Support for multiple background subtraction algorithms:
-- **MOG2** (Mixture of Gaussians 2): Primary algorithm
-- **KNN** (K-Nearest Neighbors): Alternative option
-- **GMG** (Geometric Multigrid): For static camera scenarios
-- **Simple Frame Differencing**: Lightweight baseline
+### 4.1 Library Selection
 
-### 4.2 MOG2 Configuration Parameters
-- **History**: Number of last frames affecting background model (default: 500)
-- **varThreshold**: Threshold on squared Mahalanobis distance (default: 16)
+#### 4.1.1 OpenCV Built-in Algorithms (Primary)
+OpenCV provides efficient built-in background subtraction classes:
+- **cv2.createBackgroundSubtractorMOG2()**: Gaussian Mixture Model (recommended)
+- **cv2.createBackgroundSubtractorKNN()**: K-Nearest Neighbors based
+- **cv2.bgsegm.createBackgroundSubtractorMOG()**: Original MOG (legacy)
+- **cv2.bgsegm.createBackgroundSubtractorGMG()**: Geometric multigrid
+- **cv2.bgsegm.createBackgroundSubtractorCNT()**: Counting-based
+
+#### 4.1.2 BGSLibrary (Advanced Option)
+Install via: `pip install pybgs`
+
+BGSLibrary provides 43+ advanced algorithms including:
+- **FrameDifference**: Simple frame differencing baseline
+- **StaticFrameDifference**: For static camera scenarios
+- **AdaptiveBackgroundLearning**: Adaptive learning rate
+- **CodeBook**: Codebook-based algorithm
+- **KDE**: Kernel Density Estimation
+- **MixtureOfGaussianV2**: Enhanced MOG2 variant
+- **PAWCS**: Pixel-based Adaptive Word Consensus Segmenter
+- **SigmaDelta**: Sigma-delta filter based
+- **ViBe**: Visual Background Extractor
+- **SuBSENSE**: Self-Balanced Sensitivity Segmenter (state-of-the-art)
+- **LBSP**: Local Binary Similarity Pattern
+- **MultiLayer**: Multi-layer background subtraction
+- **T2FGMM_UM**: Type-2 Fuzzy Gaussian Mixture Model
+- **T2FGMM_UV**: Type-2 Fuzzy with UV adaptation
+
+### 4.2 Algorithm Selection Strategy
+- **Default**: OpenCV's MOG2 (best balance of speed and accuracy)
+- **High Accuracy**: bgslibrary's SuBSENSE or PAWCS
+- **High Speed**: FrameDifference or simple MOG
+- **Outdoor/Dynamic Lighting**: PAWCS, SigmaDelta
+- **Indoor/Static Lighting**: MOG2, KNN
+- **Minimal Resources**: FrameDifference, StaticFrameDifference
+
+### 4.3 OpenCV MOG2 Implementation Details
+
+#### 4.3.1 Initialization
+Function: `cv2.createBackgroundSubtractorMOG2(history, varThreshold, detectShadows)`
+
+#### 4.3.2 Parameters
+- **history**: Number of last frames affecting background model (default: 500)
 - **detectShadows**: Enable/disable shadow detection (default: true)
 - **shadowValue**: Value used to mark shadows in output (default: 127)
 - **shadowThreshold**: Shadow detection threshold (default: 0.5)
 - **learningRate**: Background model update rate (default: -1 for automatic)
+  - Range: -1 (automatic), 0.0 (no learning) to 1.0 (complete replacement)
+  - Recommended: 0.001 to 0.01 for slow learning, 0.05 to 0.1 for fast adaptation
+- **varThreshold**: Threshold on squared Mahalanobis distance (default: 16)
+  - Lower values: More sensitive (more foreground pixels)
+  - Higher values: Less sensitive (fewer foreground pixels)
+  - Recommended range: 9 to 25
 
-### 4.3 KNN Configuration Parameters
-- **History**: Number of frames for background model (default: 500)
-- **dist2Threshold**: Distance threshold (default: 400.0)
-- **detectShadows**: Enable shadow detection (default: true)
+#### 4.3.3 Application Method
+Function: `foreground_mask = background_subtractor.apply(frame, learningRate)`
+- **Input**: Current frame (BGR or grayscale)
+- **Output**: Foreground mask (grayscale image)
+  - 0 (black): Background
+  - 255 (white): Foreground
+  - 127 (gray): Shadow (if detectShadows=True)
+- **learningRate parameter**: Can be overridden per frame
 
-### 4.4 Background Model Management
+#### 4.3.4 Additional Methods
+- `getBackgroundImage()`: Returns current background model image
+- `setHistory(frames)`: Update history parameter
+- `setVarThreshold(threshold)`: Update variance threshold
+- `setDetectShadows(boolean)`: Enable/disable shadow detection
+- `setShadowValue(value)`: Set shadow pixel value
+- `setShadowThreshold(threshold)`: Set shadow detection sensitivity
+
+### 4.4 OpenCV KNN Implementation Details
+
+#### 4.4.1 Initialization
+Function: `cv2.createBackgroundSubtractorKNN(history, dist2Threshold, detectShadows)`
+
+#### 4.4.2 Parameters
+- **history**: Number of frames for background model (default: 500)
+- **dist2Threshold**: Squared Euclidean distance threshold (default: 400.0)
+  - Lower values: More foreground pixels
+  - Higher values: Fewer foreground pixels
+  - Recommended range: 200 to 800
+- **detectShadows**: Enable shadow detection (default: True)
+
+#### 4.4.3 Application Method
+Same as MOG2: `foreground_mask = background_subtractor.apply(frame, learningRate)`
+
+#### 4.4.4 KNN vs MOG2 Comparison
+- **KNN Advantages**: Better for scenes with rapid changes, less memory
+- **MOG2 Advantages**: Better shadow detection, more stable in static scenes
+- **Performance**: KNN typically faster than MOG2
+
+### 4.5 BGSLibrary Implementation Details
+
+#### 4.5.1 Installation and Import
+Installation: `pip install pybgs`
+Import: `import pybgs`
+
+#### 4.5.2 Initialization
+General pattern: `algorithm = pybgs.AlgorithmName()`
+
+Examples:
+- `bgs = pybgs.FrameDifference()`
+- `bgs = pybgs.MixtureOfGaussianV2()`
+- `bgs = pybgs.SuBSENSE()`
+- `bgs = pybgs.PAWCS()`
+- `bgs = pybgs.ViBe()`
+- `bgs = pybgs.SigmaDelta()`
+
+#### 4.5.3 Application Method
+Function: `foreground_mask = algorithm.apply(frame)`
+- **Input**: Frame as NumPy array (BGR format)
+- **Output**: Binary foreground mask (0=background, 255=foreground)
+
+#### 4.5.4 Available Algorithms List
+**Simple Algorithms:**
+- FrameDifference
+- StaticFrameDifference
+- WeightedMovingMean
+- WeightedMovingVariance
+
+**Statistical Algorithms:**
+- AdaptiveBackgroundLearning
+- AdaptiveSelectiveBackgroundLearning
+- MixtureOfGaussianV1
+- MixtureOfGaussianV2
+- KNN
+
+**Advanced Algorithms:**
+- CodeBook
+- ViBe (Visual Background Extractor)
+- PAWCS (Pixel-based Adaptive Word Consensus Segmenter)
+- SuBSENSE (Self-Balanced Sensitivity Segmenter)
+- LOBSTER (LOcal Binary SimiLarity segmenTER)
+- SigmaDelta
+- T2FGMM (Type-2 Fuzzy Gaussian Mixture Model)
+
+**Special Purpose:**
+- MultiLayer (for multi-layer scenes)
+- KDE (Kernel Density Estimation)
+- LBP_MRF (Local Binary Pattern with Markov Random Field)
+- FuzzySugenoIntegral
+- FuzzyChoquetIntegral
+
+#### 4.5.5 Algorithm Selection Guidelines
+- **FrameDifference**: Fastest, minimal memory, good for testing
+- **ViBe**: Good balance of speed and accuracy
+- **SuBSENSE**: Best accuracy, slower, good for challenging scenes
+- **PAWCS**: Excellent for dynamic backgrounds
+- **SigmaDelta**: Good for camouflage and gradual changes
+
+### 4.6 Background Model Management
 - **Initialization Phase**: First N frames used to build initial model (N = 30-120)
 - **Update Strategy**: Continuous online update or periodic reset
 - **Learning Rate Adaptation**:
@@ -124,48 +256,252 @@ Support for multiple background subtraction algorithms:
   - Automatic reset when tracking is lost for >T seconds
   - Scene change detection (average pixel change > threshold)
 
-### 4.5 Foreground Mask Post-Processing
-- **Binary Threshold**: Convert grayscale mask to binary (threshold: 128)
-- **Morphological Operations Sequence**:
-  1. Opening (erosion followed by dilation) - removes noise
-  2. Closing (dilation followed by erosion) - fills holes
-- **Kernel Configurations**:
-  - Small kernel (3×3 or 5×5) for fine details
-  - Medium kernel (7×7 or 9×9) for standard processing
-  - Large kernel (11×11 or 15×15) for aggressive filtering
-- **Kernel Shapes**: Rectangular, elliptical, or cross-shaped
+### 4.7 Foreground Mask Post-Processing (OpenCV)
+
+#### 4.7.1 Binary Threshold
+Function: `cv2.threshold(mask, threshold_value, max_value, threshold_type)`
+- **threshold_value**: 127 or 128 (to remove shadows if present)
+- **max_value**: 255
+- **threshold_type**: `cv2.THRESH_BINARY`
+- **Purpose**: Convert grayscale mask to pure binary (0 or 255)
+- Alternative: Use mask comparison: `binary_mask = mask > 127`
+
+#### 4.7.2 Morphological Operations
+
+**Kernel Creation:**
+Function: `cv2.getStructuringElement(shape, ksize)`
+- **shape**:
+  - `cv2.MORPH_RECT`: Rectangular kernel
+  - `cv2.MORPH_ELLIPSE`: Elliptical kernel (better for circular objects)
+  - `cv2.MORPH_CROSS`: Cross-shaped kernel
+- **ksize**: Tuple (width, height) - typically (3,3), (5,5), (7,7), etc.
+
+**Operations Sequence:**
+
+1. **Opening** (Remove noise/small objects)
+   - Function: `cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations)`
+   - Alternative: Erosion then dilation manually
+     - `cv2.erode(mask, kernel, iterations)`
+     - `cv2.dilate(eroded, kernel, iterations)`
+   - **Purpose**: Removes small white noise pixels
+   - **Kernel size**: 3×3 or 5×5
+   - **Iterations**: 1-2
+
+2. **Closing** (Fill holes in objects)
+   - Function: `cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations)`
+   - Alternative: Dilation then erosion manually
+     - `cv2.dilate(mask, kernel, iterations)`
+     - `cv2.erode(dilated, kernel, iterations)`
+   - **Purpose**: Fills small black holes inside white regions
+   - **Kernel size**: 5×5 or 7×7
+   - **Iterations**: 1-2
+
+3. **Dilation** (Optional, to slightly expand objects)
+   - Function: `cv2.dilate(mask, kernel, iterations)`
+   - **Purpose**: Expand foreground objects
+   - **Kernel size**: 3×3
+   - **Iterations**: 1
+
+#### 4.7.3 Recommended Kernel Configurations
+- **Small kernel** (3×3 or 5×5): For fine details and small objects
+- **Medium kernel** (7×7 or 9×9): Standard processing, good default
+- **Large kernel** (11×11 or 15×15): Aggressive filtering, merge nearby objects
+
+#### 4.7.4 Shadow Removal
+If MOG2/KNN shadow detection is enabled:
+- Option 1: Threshold at 127 to remove shadows (treat as background)
+- Option 2: Threshold at 64 to include shadows as foreground
+- Recommended: Remove shadows for cleaner detection
+
+#### 4.7.5 Alternative Cleanup Sequence (Recommended Pipeline)
+
+**Complete mask cleanup workflow:**
+
+```
+Sequence:
+1. Erosion - Remove small noise
+2. Dilation - Restore object size
+3. Gaussian Blur - Smooth edges and reduce noise
+4. Morphological Closing - Fill remaining holes
+5. Binary Threshold - Final cleanup
+```
+
+**Detailed Steps:**
+
+1. **Create Kernel**
+   ```
+   kernel = np.ones((5, 5), np.uint8)
+   # Creates a 5×5 rectangular kernel of ones
+   ```
+
+2. **Erosion** (Remove small noise pixels)
+   ```
+   Function: cv2.erode(mask, kernel, iterations)
+   fgMask = cv2.erode(fgMask, kernel, iterations=1)
+   ```
+   - Removes small white noise
+   - Shrinks foreground objects slightly
+
+3. **Dilation** (Restore object size)
+   ```
+   Function: cv2.dilate(mask, kernel, iterations)
+   fgMask = cv2.dilate(fgMask, kernel, iterations=1)
+   ```
+   - Restores object size after erosion
+   - Connects nearby components
+   - Together with erosion forms an "opening" operation
+
+4. **Gaussian Blur** (Smooth and reduce noise)
+   ```
+   Function: cv2.GaussianBlur(mask, ksize, sigmaX)
+   fgMask = cv2.GaussianBlur(fgMask, (3, 3), 0)
+   ```
+   - **ksize**: Kernel size (3, 3) - must be odd
+   - **sigmaX**: Standard deviation (0 = auto-calculate from kernel size)
+   - **Purpose**: Smooths edges, reduces high-frequency noise
+   - **Effect**: Softens mask before final operations
+
+5. **Morphological Closing** (Fill holes)
+   ```
+   Function: cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+   fgMask = cv2.morphologyEx(fgMask, cv2.MORPH_CLOSE, kernel)
+   ```
+   - Fills small holes inside objects
+   - Connects broken parts of objects
+   - Dilation followed by erosion
+
+6. **Binary Threshold** (Final cleanup)
+   ```
+   Function: cv2.threshold(mask, threshold, maxval, type)
+   _, fgMask = cv2.threshold(fgMask, 130, 255, cv2.THRESH_BINARY)
+   ```
+   - **threshold**: 130 (higher than default 127)
+   - **maxval**: 255 (white)
+   - **type**: cv2.THRESH_BINARY
+   - **Purpose**: Convert to pure binary after blur
+   - **Returns**: (threshold_value, binary_mask) - use _ to discard first value
+
+**Complete Function Chain:**
+```
+kernel = np.ones((5, 5), np.uint8)
+fgMask = cv2.erode(fgMask, kernel, iterations=1)
+fgMask = cv2.dilate(fgMask, kernel, iterations=1)
+fgMask = cv2.GaussianBlur(fgMask, (3, 3), 0)
+fgMask = cv2.morphologyEx(fgMask, cv2.MORPH_CLOSE, kernel)
+_, fgMask = cv2.threshold(fgMask, 130, 255, cv2.THRESH_BINARY)
+```
+
+**Advantages of this approach:**
+- Gaussian blur adds noise reduction beyond morphological ops
+- Sequence is optimized: removes noise first, then smooths, then finalizes
+- Threshold value of 130 is stricter, reducing false positives
+- Works well with both OpenCV and bgslibrary outputs
 
 ---
 
 ## 5. OBJECT DETECTION MODULE
 
-### 5.1 Contour Detection
-- **Method**: Find external contours in binary foreground mask
-- **Mode**: External contours only (RETR_EXTERNAL)
-- **Approximation**: Chain approximation for efficiency (CHAIN_APPROX_SIMPLE)
+### 5.1 Contour Detection (OpenCV)
 
-### 5.2 Contour Filtering Criteria
-- **Minimum Area**: Minimum contour area in pixels (default: 500)
-- **Maximum Area**: Maximum contour area as fraction of frame (default: 0.3)
-- **Aspect Ratio**: Width/height ratio limits (default: 0.2 to 5.0)
-- **Solidity**: Contour area / convex hull area (default: >0.3)
-- **Extent**: Contour area / bounding rectangle area (default: >0.2)
+#### 5.1.1 Find Contours
+Function: `cv2.findContours(binary_mask, mode, method)`
+- **binary_mask**: Binary foreground mask (8-bit single-channel)
+- **mode**: `cv2.RETR_EXTERNAL` (only external contours)
+  - Alternative: `cv2.RETR_LIST` (all contours without hierarchy)
+- **method**: `cv2.CHAIN_APPROX_SIMPLE` (compress contours)
+  - Alternative: `cv2.CHAIN_APPROX_NONE` (all points, higher memory)
+- **Returns**: Tuple (contours, hierarchy)
+  - **contours**: List of contour arrays
+  - **hierarchy**: Hierarchy information (can be ignored)
 
-### 5.3 Bounding Box Calculation
-- **Method**: Minimum area rectangle or axis-aligned rectangle
-- **Representation**: (x, y, width, height) in frame coordinates
-- **Padding**: Optional expansion by N pixels in all directions
+**Usage Note**: OpenCV 4.x returns (contours, hierarchy), OpenCV 3.x returns (image, contours, hierarchy)
 
-### 5.4 Object Properties Extraction
-For each detected object, calculate:
-- **Centroid**: Center point of bounding box or contour moments
-- **Area**: Contour area in square pixels
-- **Perimeter**: Contour perimeter in pixels
-- **Bounding Box**: Axis-aligned rectangle
-- **Orientation**: Angle of minimum area rectangle
-- **Aspect Ratio**: Width / height
-- **Solidity**: Area / convex hull area
-- **Extent**: Area / bounding rectangle area
+### 5.2 Contour Filtering (OpenCV)
+
+#### 5.2.1 Area Filtering
+Function: `cv2.contourArea(contour)`
+- **Returns**: Area in square pixels
+- **Filtering Logic**:
+  - Minimum area: `area >= min_area` (default: 500 pixels)
+  - Maximum area: `area <= frame_width * frame_height * max_fraction` (default: 0.3)
+- **Purpose**: Remove tiny noise and overly large regions
+
+#### 5.2.2 Aspect Ratio Filtering
+Steps:
+1. Get bounding box: `x, y, w, h = cv2.boundingRect(contour)`
+2. Calculate aspect ratio: `aspect_ratio = w / h`
+3. Filter: `min_ratio <= aspect_ratio <= max_ratio` (default: 0.2 to 5.0)
+- **Purpose**: Remove elongated objects (likely noise or shadows)
+
+#### 5.2.3 Solidity Filtering
+Steps:
+1. Get contour area: `area = cv2.contourArea(contour)`
+2. Get convex hull: `hull = cv2.convexHull(contour)`
+3. Get hull area: `hull_area = cv2.contourArea(hull)`
+4. Calculate solidity: `solidity = area / hull_area`
+5. Filter: `solidity >= min_solidity` (default: 0.3)
+- **Purpose**: Remove irregular shapes (likely fragmented detections)
+
+#### 5.2.4 Extent Filtering
+Steps:
+1. Get contour area: `area = cv2.contourArea(contour)`
+2. Get bounding rect: `x, y, w, h = cv2.boundingRect(contour)`
+3. Calculate extent: `extent = area / (w * h)`
+4. Filter: `extent >= min_extent` (default: 0.2)
+- **Purpose**: Remove sparse or scattered detections
+
+### 5.3 Bounding Box Calculation (OpenCV)
+
+#### 5.3.1 Axis-Aligned Bounding Rectangle
+Function: `cv2.boundingRect(contour)`
+- **Returns**: (x, y, width, height)
+- **Coordinate**: (x, y) is top-left corner
+- **Usage**: Fast, simple, good for most cases
+
+#### 5.3.2 Minimum Area Rectangle (Rotated)
+Function: `cv2.minAreaRect(contour)`
+- **Returns**: ((center_x, center_y), (width, height), angle)
+- **Usage**: For rotated objects
+- **Box Points**: `cv2.boxPoints(rect)` to get 4 corner points
+
+#### 5.3.3 Bounding Box Padding
+Add padding to bounding box:
+- `x_padded = max(0, x - padding)`
+- `y_padded = max(0, y - padding)`
+- `w_padded = min(frame_width - x_padded, w + 2*padding)`
+- `h_padded = min(frame_height - y_padded, h + 2*padding)`
+
+### 5.4 Object Properties Extraction (OpenCV)
+
+#### 5.4.1 Centroid Calculation
+Method 1 (from bounding box):
+- `centroid_x = x + w / 2`
+- `centroid_y = y + h / 2`
+
+Method 2 (from contour moments):
+Function: `cv2.moments(contour)`
+- **Returns**: Dictionary of moment values
+- **Centroid calculation**:
+  - `M = cv2.moments(contour)`
+  - `centroid_x = M['m10'] / M['m00']` (if M['m00'] != 0)
+  - `centroid_y = M['m01'] / M['m00']` (if M['m00'] != 0)
+- **Advantage**: More accurate, weighted by pixel distribution
+
+#### 5.4.2 Area and Perimeter
+- **Area**: `cv2.contourArea(contour)` - returns float
+- **Perimeter**: `cv2.arcLength(contour, closed=True)` - returns float
+- **closed**: True for closed contours
+
+#### 5.4.3 Complete Property Set
+For each detected object, extract:
+- **Centroid**: (cx, cy) - from moments or bounding box
+- **Area**: Square pixels - from contourArea()
+- **Perimeter**: Pixels - from arcLength()
+- **Bounding Box**: (x, y, w, h) - from boundingRect()
+- **Aspect Ratio**: w / h
+- **Solidity**: area / hull_area
+- **Extent**: area / (w × h)
+- **Convex Hull**: cv2.convexHull(contour) - for advanced processing
 
 ### 5.5 Object Selection Strategy
 When multiple objects detected, prioritize by:
@@ -287,44 +623,123 @@ Given pan, tilt, and zoom:
 
 ## 8. FRAME RENDERING MODULE
 
-### 8.1 Virtual Camera Transformation
-- **Input**: Original frame + ROI parameters
-- **Process**:
-  1. Extract ROI from original frame
-  2. Resize ROI to output frame dimensions
-  3. Apply interpolation for quality
-- **Interpolation Methods**:
-  - INTER_LINEAR: Fast, good quality (default)
-  - INTER_CUBIC: Slower, better quality
-  - INTER_LANCZOS4: Slowest, best quality
-  - INTER_NEAREST: Fastest, lowest quality
+### 8.1 Virtual Camera Transformation (OpenCV)
 
-### 8.2 Overlay Rendering
-Render the following overlays on output frame:
+#### 8.1.1 ROI Extraction
+Direct array slicing (NumPy):
+- `roi = frame[y:y+h, x:x+w]`
+- Where (x, y, w, h) is the ROI rectangle
+- **Bounds checking**: Ensure x, y, w, h are within frame dimensions
+
+Alternative using OpenCV:
+- `roi = frame[y1:y2, x1:x2].copy()`
+
+#### 8.1.2 ROI Resizing
+Function: `cv2.resize(roi, dsize, interpolation)`
+- **roi**: Extracted region of interest
+- **dsize**: Output size as (width, height) tuple
+- **interpolation**: Resampling method
+  - `cv2.INTER_LINEAR`: Bilinear (default, fast, good quality)
+  - `cv2.INTER_CUBIC`: Bicubic (slower, better quality for zooming in)
+  - `cv2.INTER_LANCZOS4`: Lanczos (slowest, best quality)
+  - `cv2.INTER_NEAREST`: Nearest neighbor (fastest, lowest quality)
+  - `cv2.INTER_AREA`: Pixel area relation (best for shrinking)
+- **Returns**: Resized image
+- **Recommended**:
+  - Zooming in (enlarging): `INTER_CUBIC` or `INTER_LANCZOS4`
+  - Zooming out (shrinking): `INTER_AREA`
+
+#### 8.1.3 Complete Transform Pipeline
+Process:
+1. Calculate ROI from PTZ parameters (pan, tilt, zoom)
+2. Clamp ROI to frame boundaries
+3. Extract ROI: `roi = frame[y:y+h, x:x+w]`
+4. Resize to output dimensions: `output = cv2.resize(roi, (out_w, out_h), interpolation)`
+5. Return transformed frame
+
+### 8.2 Overlay Rendering (OpenCV)
 
 #### 8.2.1 Bounding Box Overlay
-- **Rectangle**: Around detected object
-- **Color**: Green (tracking), Yellow (acquiring), Red (lost)
-- **Thickness**: 2-3 pixels
-- **Style**: Solid or dashed line
+Function: `cv2.rectangle(image, pt1, pt2, color, thickness)`
+- **image**: Frame to draw on (modified in-place)
+- **pt1**: Top-left corner (x, y)
+- **pt2**: Bottom-right corner (x+w, y+h)
+- **color**: BGR tuple
+  - Green: (0, 255, 0) - active tracking
+  - Yellow: (0, 255, 255) - acquiring
+  - Red: (0, 0, 255) - lost
+  - Cyan: (255, 255, 0) - recovering
+- **thickness**: 2 or 3 pixels (use -1 for filled rectangle)
+
+Alternative with corners:
+- `pt2 = (x+w, y+h)` where (x, y, w, h) is bounding box
 
 #### 8.2.2 Crosshair Overlay
-- **Position**: Frame center
-- **Color**: White or cyan
-- **Size**: 20-40 pixels
-- **Thickness**: 1-2 pixels
-- **Style**: Cross or circle
+**Method 1**: Draw lines
+Function: `cv2.line(image, pt1, pt2, color, thickness)`
+```
+Center crosshair at (cx, cy) with size s:
+- Horizontal: cv2.line(image, (cx-s, cy), (cx+s, cy), (255, 255, 255), 2)
+- Vertical: cv2.line(image, (cx, cy-s), (cx, cy+s), (255, 255, 255), 2)
+```
 
-#### 8.2.3 Information Overlay
-Display text information:
-- **PTZ State**: Current pan, tilt, zoom values
-- **Tracking State**: IDLE, TRACKING, LOST, etc.
-- **Object Info**: Size, position, confidence
-- **Frame Counter**: Current frame number
-- **FPS**: Processing frame rate
-- **Position**: Top-left corner or custom
-- **Font**: Monospace, scalable
-- **Background**: Semi-transparent rectangle for readability
+**Method 2**: Draw circle
+Function: `cv2.circle(image, center, radius, color, thickness)`
+- **center**: (cx, cy) frame center
+- **radius**: 10-20 pixels
+- **color**: (255, 255, 255) white or (255, 255, 0) cyan
+- **thickness**: 2 (outline) or -1 (filled)
+
+#### 8.2.3 Information Overlay (Text)
+Function: `cv2.putText(image, text, org, fontFace, fontScale, color, thickness, lineType)`
+- **image**: Frame to draw on
+- **text**: String to display
+- **org**: Bottom-left corner of text (x, y)
+- **fontFace**: Font type
+  - `cv2.FONT_HERSHEY_SIMPLEX`: Clean, readable
+  - `cv2.FONT_HERSHEY_COMPLEX`: More formal
+  - `cv2.FONT_HERSHEY_DUPLEX`: Monospace-like
+- **fontScale**: Size multiplier (0.5 to 2.0)
+- **color**: BGR tuple (255, 255, 255) for white
+- **thickness**: 1 or 2
+- **lineType**: `cv2.LINE_AA` for anti-aliased
+
+**Text Background** (for readability):
+Draw filled rectangle behind text:
+1. Calculate text size: `(w, h), baseline = cv2.getTextSize(text, font, scale, thickness)`
+2. Draw rectangle: `cv2.rectangle(image, (x, y-h-5), (x+w, y+5), (0,0,0), -1)`
+3. Draw text: `cv2.putText(image, text, (x, y), ...)`
+
+**Multi-line text example**:
+```
+Position text at (10, 30) with 25-pixel line spacing:
+cv2.putText(image, "State: TRACKING", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
+cv2.putText(image, "Pan: 15.2°", (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
+cv2.putText(image, "Tilt: -3.5°", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
+cv2.putText(image, "Zoom: 2.5x", (10, 105), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
+```
+
+#### 8.2.4 Trajectory Trail Overlay
+Function: `cv2.polylines(image, pts, isClosed, color, thickness)`
+- **pts**: List of trajectory points [(x1,y1), (x2,y2), ...]
+- **isClosed**: False for trajectory trail
+- **color**: (0, 255, 0) green
+- **thickness**: 2
+
+Alternative (draw circles at each point):
+```
+For each point in trajectory:
+  cv2.circle(image, point, 3, (0, 255, 0), -1)
+```
+
+#### 8.2.5 Velocity Vector Overlay
+Draw arrow from current position in movement direction:
+Function: `cv2.arrowedLine(image, pt1, pt2, color, thickness, tipLength)`
+- **pt1**: Current object centroid
+- **pt2**: Predicted next position (centroid + velocity_vector)
+- **color**: (255, 0, 0) blue
+- **thickness**: 2
+- **tipLength**: 0.3 (arrow tip size ratio)
 
 #### 8.2.4 Tracking Visualization
 - **Trajectory Trail**: Show past N positions of tracked object
@@ -346,36 +761,187 @@ Optional side-by-side or picture-in-picture views:
 
 ---
 
-## 9. VIDEO INPUT/OUTPUT MODULE
+## 9. VIDEO INPUT/OUTPUT MODULE (OpenCV)
 
-### 9.1 Video Input Specifications
-- **Supported Formats**:
-  - Container: MP4, AVI, MOV, MKV
-  - Codecs: H.264, H.265, MJPEG, MPEG-4
-- **Resolution**: Arbitrary (tested from 640×480 to 1920×1080)
-- **Frame Rate**: Arbitrary (common: 24, 25, 30, 60 fps)
-- **Color Space**: RGB, BGR, or grayscale
+### 9.1 Video Input Implementation
 
-### 9.2 Video Input Handler
-- **Frame Capture**: Sequential frame-by-frame reading
-- **Frame Buffering**: Optional buffer for smooth playback
-- **Frame Skipping**: Option to process every Nth frame
-- **Loop Playback**: Restart video when end reached
-- **Seek Support**: Jump to specific frame or timestamp
+#### 9.1.1 Video Capture Initialization
+Function: `cv2.VideoCapture(filename)`
+- **filename**: Path to video file
+- **Returns**: VideoCapture object
+- **Check success**: `if cap.isOpened():`
 
-### 9.3 Video Output Specifications
-- **Output Format**: MP4 (H.264) or AVI (MJPEG)
-- **Resolution**: Same as input or configurable
-- **Frame Rate**: Match input frame rate
-- **Quality**: Configurable compression level
-- **Audio**: Passthrough or discard (not processed)
+Example:
+```
+cap = cv2.VideoCapture("input_video.mp4")
+if not cap.isOpened():
+    # Handle error
+```
 
-### 9.4 Output Recording
-- **Dual Recording**:
-  - Virtual PTZ output view
-  - Original frame with overlays (optional)
-- **Filename Convention**: timestamp-based or sequential
-- **Metadata**: Include PTZ parameters in separate log file
+#### 9.1.2 Get Video Properties
+Functions:
+- `cap.get(cv2.CAP_PROP_FRAME_WIDTH)` - frame width
+- `cap.get(cv2.CAP_PROP_FRAME_HEIGHT)` - frame height
+- `cap.get(cv2.CAP_PROP_FPS)` - frames per second
+- `cap.get(cv2.CAP_PROP_FRAME_COUNT)` - total frame count
+- `cap.get(cv2.CAP_PROP_FOURCC)` - codec fourcc code
+- `cap.get(cv2.CAP_PROP_POS_FRAMES)` - current frame position
+
+Convert to integers where needed:
+```
+width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+fps = cap.get(cv2.CAP_PROP_FPS)
+```
+
+#### 9.1.3 Frame Reading
+Function: `cap.read()`
+- **Returns**: Tuple (ret, frame)
+  - **ret**: Boolean (True if frame read successfully)
+  - **frame**: NumPy array (BGR format) or None
+- **Usage pattern**:
+  ```
+  ret, frame = cap.read()
+  if not ret:
+      # End of video or error
+      break
+  # Process frame
+  ```
+
+#### 9.1.4 Advanced Input Operations
+- **Seek to frame**: `cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)`
+- **Seek to millisecond**: `cap.set(cv2.CAP_PROP_POS_MSEC, milliseconds)`
+- **Release**: `cap.release()` - close video file
+
+#### 9.1.5 Loop Playback Implementation
+```
+When ret == False (end of video):
+  cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset to beginning
+  continue
+```
+
+#### 9.1.6 Frame Skipping
+Process every Nth frame:
+```
+frame_counter = 0
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+    if frame_counter % N == 0:
+        # Process this frame
+    frame_counter += 1
+```
+
+### 9.2 Video Output Implementation
+
+#### 9.2.1 Video Writer Initialization
+Function: `cv2.VideoWriter(filename, fourcc, fps, frameSize, isColor)`
+- **filename**: Output file path
+- **fourcc**: Codec code from `cv2.VideoWriter_fourcc()`
+- **fps**: Frame rate (match input or custom)
+- **frameSize**: (width, height) tuple
+- **isColor**: True for color, False for grayscale
+- **Returns**: VideoWriter object
+
+#### 9.2.2 Codec Selection (FourCC)
+Function: `cv2.VideoWriter_fourcc(*'XXXX')`
+
+Common codecs:
+- `cv2.VideoWriter_fourcc(*'mp4v')` - MPEG-4 (.mp4)
+- `cv2.VideoWriter_fourcc(*'X264')` - H.264 (.mp4)
+- `cv2.VideoWriter_fourcc(*'XVID')` - XVID (.avi)
+- `cv2.VideoWriter_fourcc(*'MJPG')` - Motion JPEG (.avi)
+- `cv2.VideoWriter_fourcc(*'H264')` - H.264 variant
+
+**Recommended**:
+- **Best quality**: 'X264' or 'H264' for .mp4
+- **Best compatibility**: 'MJPG' for .avi
+- **Fast writing**: 'MJPG'
+
+Example:
+```
+fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+out = cv2.VideoWriter('output.mp4', fourcc, 30.0, (640, 480))
+```
+
+#### 9.2.3 Writing Frames
+Function: `out.write(frame)`
+- **frame**: NumPy array (must match frameSize and isColor)
+- **No return value**
+- Frame must be correct size and type (BGR if isColor=True)
+
+Example:
+```
+for each frame:
+    # Process frame
+    out.write(processed_frame)
+```
+
+#### 9.2.4 Finalizing Output
+Function: `out.release()`
+- Finalizes and closes video file
+- **Must call** before program ends or file may be corrupted
+
+#### 9.2.5 Complete Video I/O Pattern
+```
+# Input
+cap = cv2.VideoCapture("input.mp4")
+width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+fps = cap.get(cv2.CAP_PROP_FPS)
+
+# Output
+fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+out = cv2.VideoWriter('output.mp4', fourcc, fps, (width, height))
+
+# Process loop
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+    # Process frame
+    processed = process_frame(frame)
+    out.write(processed)
+
+# Cleanup
+cap.release()
+out.release()
+```
+
+### 9.3 Display Window (OpenCV)
+
+#### 9.3.1 Create Window
+Function: `cv2.namedWindow(window_name, flags)`
+- **window_name**: String identifier
+- **flags**:
+  - `cv2.WINDOW_NORMAL` - resizable
+  - `cv2.WINDOW_AUTOSIZE` - fixed size (default)
+  - `cv2.WINDOW_FULLSCREEN` - fullscreen mode
+
+#### 9.3.2 Display Frame
+Function: `cv2.imshow(window_name, frame)`
+- **window_name**: Window identifier (creates if doesn't exist)
+- **frame**: Image to display (NumPy array)
+
+#### 9.3.3 Wait for Key Input
+Function: `cv2.waitKey(delay)`
+- **delay**: Milliseconds to wait (1 for ~real-time, 0 for infinite)
+- **Returns**: ASCII code of key pressed, or -1 if no key
+- **Usage**: Must call to update window display
+
+Example:
+```
+key = cv2.waitKey(1) & 0xFF
+if key == ord('q'):
+    break  # Quit
+elif key == ord(' '):
+    paused = not paused  # Toggle pause
+```
+
+#### 9.3.4 Close Windows
+- `cv2.destroyWindow(window_name)` - close specific window
+- `cv2.destroyAllWindows()` - close all OpenCV windows
 
 ---
 
@@ -391,11 +957,20 @@ Optional side-by-side or picture-in-picture views:
 #### Background Subtraction Section
 ```
 background_subtraction:
-  algorithm: "MOG2" | "KNN" | "GMG"
-  history: integer (100-1000)
-  var_threshold: float (4.0-50.0)
-  detect_shadows: boolean
-  learning_rate: float (-1.0 for auto, 0.0001-0.1)
+  library: "opencv" | "bgslibrary"  # Choose library
+  algorithm: string  # Algorithm name depends on library
+
+  # OpenCV algorithms: "MOG2", "KNN", "MOG", "GMG", "CNT"
+  # BGSLibrary algorithms: "FrameDifference", "ViBe", "SuBSENSE", "PAWCS", "SigmaDelta", etc.
+
+  # OpenCV-specific parameters (used when library="opencv")
+  history: integer (100-1000, default: 500)
+  var_threshold: float (4.0-50.0, default: 16.0)  # For MOG2
+  dist2_threshold: float (200-800, default: 400.0)  # For KNN
+  detect_shadows: boolean (default: true)
+  learning_rate: float (-1.0 for auto, 0.0001-0.1, default: -1)
+
+  # BGSLibrary note: Uses internal defaults, no configuration needed
 ```
 
 #### Morphological Processing Section
@@ -842,23 +1417,413 @@ Provide test videos covering:
 
 ---
 
-## 19. DEVELOPMENT GUIDELINES
+## 19. OPENCV/BGSLIBRARY IMPLEMENTATION WORKFLOW
 
-### 19.1 Programming Language
+### 19.1 Complete Pipeline with OpenCV
+
+This section provides the detailed step-by-step workflow for implementing the system using OpenCV.
+
+#### 19.1.1 Initialization Phase
+
+**Step 1: Import Libraries**
+```
+Required imports:
+- import cv2
+- import numpy as np
+- import time (for FPS calculation)
+- import json or yaml (for configuration)
+- Optional: import pybgs (if using bgslibrary)
+```
+
+**Step 2: Load Configuration**
+- Read JSON/YAML config file
+- Set default values for missing parameters
+- Validate parameter ranges
+
+**Step 3: Initialize Video Capture**
+```
+cap = cv2.VideoCapture(input_video_path)
+Verify: if not cap.isOpened(): handle error
+Get properties:
+  - frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+  - frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+  - fps = cap.get(cv2.CAP_PROP_FPS)
+  - total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+```
+
+**Step 4: Initialize Background Subtractor**
+
+*Option A: OpenCV MOG2*
+```
+bg_subtractor = cv2.createBackgroundSubtractorMOG2(
+    history=500,
+    varThreshold=16,
+    detectShadows=True
+)
+```
+
+*Option B: OpenCV KNN*
+```
+bg_subtractor = cv2.createBackgroundSubtractorKNN(
+    history=500,
+    dist2Threshold=400.0,
+    detectShadows=True
+)
+```
+
+*Option C: BGSLibrary*
+```
+import pybgs
+bg_subtractor = pybgs.FrameDifference()
+# or pybgs.SuBSENSE(), pybgs.PAWCS(), etc.
+```
+
+**Step 5: Initialize PTZ State**
+```
+ptz_state = {
+    'pan': 0.0,
+    'tilt': 0.0,
+    'zoom': 1.0
+}
+```
+
+**Step 6: Initialize Tracking State**
+```
+tracking_state = {
+    'status': 'IDLE',  # IDLE, ACQUIRING, TRACKING, LOST, RECOVERING
+    'target': None,
+    'frames_tracked': 0,
+    'frames_lost': 0,
+    'confidence': 0.0
+}
+```
+
+**Step 7: Initialize Video Writer** (if saving output)
+```
+fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+out = cv2.VideoWriter(
+    output_video_path,
+    fourcc,
+    fps,
+    (frame_width, frame_height)
+)
+```
+
+**Step 8: Create Display Window**
+```
+cv2.namedWindow('PTZ Tracking', cv2.WINDOW_NORMAL)
+```
+
+#### 19.1.2 Main Processing Loop
+
+**Frame-by-frame processing structure:**
+
+```
+frame_count = 0
+
+while True:
+    # STEP 1: Capture Frame
+    ret, frame = cap.read()
+    if not ret:
+        if loop_playback:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            continue
+        else:
+            break
+
+    frame_count += 1
+    original_frame = frame.copy()  # Keep original for display
+
+    # STEP 2: Background Subtraction
+    # For OpenCV:
+    fg_mask = bg_subtractor.apply(frame, learningRate=0.01)
+    # For bgslibrary:
+    # fg_mask = bg_subtractor.apply(frame)
+
+    # STEP 3: Post-process Foreground Mask
+    # Recommended cleanup sequence:
+    kernel = np.ones((5, 5), np.uint8)
+    fg_mask = cv2.erode(fg_mask, kernel, iterations=1)
+    fg_mask = cv2.dilate(fg_mask, kernel, iterations=1)
+    fg_mask = cv2.GaussianBlur(fg_mask, (3, 3), 0)
+    fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel)
+    _, fg_mask = cv2.threshold(fg_mask, 130, 255, cv2.THRESH_BINARY)
+
+    # STEP 4: Find Contours
+    contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # STEP 5: Filter and Select Object
+    valid_objects = []
+
+    for contour in contours:
+        # Area filtering
+        area = cv2.contourArea(contour)
+        if area < min_area or area > max_area_fraction * frame_width * frame_height:
+            continue
+
+        # Get bounding box
+        x, y, w, h = cv2.boundingRect(contour)
+
+        # Aspect ratio filtering
+        aspect_ratio = w / h if h > 0 else 0
+        if aspect_ratio < min_aspect or aspect_ratio > max_aspect:
+            continue
+
+        # Solidity filtering
+        hull = cv2.convexHull(contour)
+        hull_area = cv2.contourArea(hull)
+        solidity = area / hull_area if hull_area > 0 else 0
+        if solidity < min_solidity:
+            continue
+
+        # Calculate centroid
+        M = cv2.moments(contour)
+        if M['m00'] != 0:
+            cx = int(M['m10'] / M['m00'])
+            cy = int(M['m01'] / M['m00'])
+        else:
+            cx = x + w // 2
+            cy = y + h // 2
+
+        # Store valid object
+        valid_objects.append({
+            'contour': contour,
+            'bbox': (x, y, w, h),
+            'centroid': (cx, cy),
+            'area': area
+        })
+
+    # Select best object (largest area strategy)
+    target_object = None
+    if valid_objects:
+        target_object = max(valid_objects, key=lambda obj: obj['area'])
+
+    # STEP 6: Update Tracking State
+    if target_object is not None:
+        if tracking_state['status'] == 'IDLE':
+            tracking_state['status'] = 'ACQUIRING'
+            tracking_state['frames_tracked'] = 1
+        elif tracking_state['status'] == 'ACQUIRING':
+            tracking_state['frames_tracked'] += 1
+            if tracking_state['frames_tracked'] >= acquisition_threshold:
+                tracking_state['status'] = 'TRACKING'
+        elif tracking_state['status'] in ['TRACKING', 'LOST']:
+            tracking_state['status'] = 'TRACKING'
+            tracking_state['frames_lost'] = 0
+
+        tracking_state['target'] = target_object
+        tracking_state['confidence'] = min(1.0, tracking_state['frames_tracked'] / 30.0)
+    else:
+        if tracking_state['status'] == 'TRACKING':
+            tracking_state['frames_lost'] += 1
+            if tracking_state['frames_lost'] >= lost_threshold:
+                tracking_state['status'] = 'LOST'
+        elif tracking_state['status'] in ['ACQUIRING', 'LOST']:
+            tracking_state['status'] = 'IDLE'
+
+    # STEP 7: Calculate PTZ Adjustments
+    if tracking_state['status'] == 'TRACKING' and target_object:
+        cx, cy = target_object['centroid']
+
+        # Calculate error from center
+        error_x = (cx - frame_width / 2) / frame_width
+        error_y = (cy - frame_height / 2) / frame_height
+
+        # Apply deadband
+        if abs(error_x) > deadband_x:
+            ptz_state['pan'] += error_x * pan_sensitivity
+        if abs(error_y) > deadband_y:
+            ptz_state['tilt'] += error_y * tilt_sensitivity
+
+        # Zoom control based on object size
+        x, y, w, h = target_object['bbox']
+        object_size = max(w, h)
+        desired_size = frame_width * 0.3  # Target: object fills 30% of frame
+
+        if object_size < desired_size * 0.8:
+            # Object too small, zoom in
+            ptz_state['zoom'] += zoom_speed
+        elif object_size > desired_size * 1.2:
+            # Object too large, zoom out
+            ptz_state['zoom'] -= zoom_speed
+
+        # Clamp zoom
+        ptz_state['zoom'] = np.clip(ptz_state['zoom'], min_zoom, max_zoom)
+
+        # Apply smoothing (exponential moving average)
+        # ptz_state values would be smoothed here
+
+    # STEP 8: Calculate ROI from PTZ State
+    zoom = ptz_state['zoom']
+    roi_w = int(frame_width / zoom)
+    roi_h = int(frame_height / zoom)
+
+    # Center based on pan/tilt (simplified - pan/tilt affect center position)
+    # For simulation, pan/tilt can shift the ROI center
+    center_x = frame_width // 2 + int(ptz_state['pan'])
+    center_y = frame_height // 2 + int(ptz_state['tilt'])
+
+    roi_x = center_x - roi_w // 2
+    roi_y = center_y - roi_h // 2
+
+    # Clamp ROI to frame boundaries
+    roi_x = max(0, min(roi_x, frame_width - roi_w))
+    roi_y = max(0, min(roi_y, frame_height - roi_h))
+
+    # STEP 9: Extract and Resize ROI (Virtual PTZ)
+    roi = original_frame[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w]
+    ptz_view = cv2.resize(roi, (frame_width, frame_height), interpolation=cv2.INTER_LINEAR)
+
+    # STEP 10: Draw Overlays
+    display_frame = ptz_view.copy()
+
+    # Draw bounding box (if tracking)
+    if tracking_state['status'] == 'TRACKING' and target_object:
+        # Transform bbox coordinates to ROI space
+        x, y, w, h = target_object['bbox']
+        # Adjust coordinates relative to ROI
+        x_roi = int((x - roi_x) * frame_width / roi_w)
+        y_roi = int((y - roi_y) * frame_height / roi_h)
+        w_roi = int(w * frame_width / roi_w)
+        h_roi = int(h * frame_height / roi_h)
+
+        # Color based on state
+        color = (0, 255, 0)  # Green for tracking
+        cv2.rectangle(display_frame, (x_roi, y_roi), (x_roi+w_roi, y_roi+h_roi), color, 2)
+
+    # Draw crosshair at center
+    center = (frame_width // 2, frame_height // 2)
+    cv2.line(display_frame, (center[0]-20, center[1]), (center[0]+20, center[1]), (255,255,255), 2)
+    cv2.line(display_frame, (center[0], center[1]-20), (center[0], center[1]+20), (255,255,255), 2)
+
+    # Draw info text
+    cv2.putText(display_frame, f"State: {tracking_state['status']}", (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
+    cv2.putText(display_frame, f"Pan: {ptz_state['pan']:.1f}", (10, 55),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
+    cv2.putText(display_frame, f"Tilt: {ptz_state['tilt']:.1f}", (10, 80),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
+    cv2.putText(display_frame, f"Zoom: {ptz_state['zoom']:.2f}x", (10, 105),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
+
+    # STEP 11: Display and Save
+    cv2.imshow('PTZ Tracking', display_frame)
+
+    if save_output:
+        out.write(display_frame)
+
+    # STEP 12: Handle User Input
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord('q'):
+        break
+    elif key == ord(' '):
+        cv2.waitKey(0)  # Pause
+    elif key == ord('r'):
+        # Reset tracking and PTZ
+        tracking_state['status'] = 'IDLE'
+        ptz_state = {'pan': 0.0, 'tilt': 0.0, 'zoom': 1.0}
+```
+
+#### 19.1.3 Cleanup Phase
+
+```
+# Release resources
+cap.release()
+if save_output:
+    out.release()
+cv2.destroyAllWindows()
+
+# Save telemetry/logs
+# Export statistics
+```
+
+### 19.2 BGSLibrary-Specific Implementation Notes
+
+When using bgslibrary instead of OpenCV's built-in subtractors:
+
+**Differences:**
+1. **Import**: `import pybgs`
+2. **Initialization**: `bg_subtractor = pybgs.AlgorithmName()`
+3. **Application**: `fg_mask = bg_subtractor.apply(frame)` (no learningRate parameter)
+4. **Output**: Returns binary mask directly (0 and 255)
+
+**Recommended Algorithms by Use Case:**
+
+- **Default/Testing**: `pybgs.FrameDifference()`
+- **Good Balance**: `pybgs.ViBe()`
+- **Best Accuracy**: `pybgs.SuBSENSE()`
+- **Dynamic Scenes**: `pybgs.PAWCS()`
+- **Static Scenes**: `pybgs.MixtureOfGaussianV2()`
+
+**No Additional Configuration Required**: BGSLibrary algorithms use internal default parameters.
+
+### 19.3 Key Implementation Tips
+
+1. **Frame Copy**: Always copy original frame before processing for overlay rendering
+2. **ROI Bounds**: Always clamp ROI coordinates to prevent out-of-bounds errors
+3. **Division by Zero**: Check denominators before division (moments, areas)
+4. **Coordinate Transformation**: When zoomed, transform object coordinates to display space
+5. **Color Space**: OpenCV uses BGR by default, not RGB
+6. **Mask Type**: Ensure masks are 8-bit single-channel (CV_8UC1) for findContours
+7. **Wait Key**: Must call cv2.waitKey() for imshow() to work
+8. **Resource Cleanup**: Always release VideoCapture and VideoWriter
+
+### 19.4 Performance Optimization
+
+1. **Resize Input**: Process smaller frames for speed: `frame = cv2.resize(frame, (width//2, height//2))`
+2. **Skip Frames**: Process every Nth frame for near-real-time on slow hardware
+3. **Reduce Morphology**: Use smaller kernels and fewer iterations
+4. **Simplify Filtering**: Remove extent/solidity checks if not needed
+5. **Algorithm Choice**: Use faster algorithms (FrameDifference, MOG) over slower (SuBSENSE)
+6. **Disable Shadows**: Set detectShadows=False to skip shadow processing
+7. **Reduce History**: Lower history parameter (e.g., 100-200) for faster adaptation
+
+---
+
+## 20. DEVELOPMENT GUIDELINES
+
+### 20.1 Programming Language
 - **Primary**: Python 3.8+
 - **Rationale**: Rich ecosystem for computer vision (OpenCV, NumPy)
 
-### 19.2 Key Dependencies
-- **OpenCV**: Video I/O, image processing, background subtraction
-- **NumPy**: Numerical computations, array operations
-- **Configuration**: JSON (built-in) or PyYAML
-- **Logging**: Built-in logging module
-- **Optional**: Matplotlib for visualization, SciPy for advanced filtering
+### 20.2 Key Dependencies
 
-### 19.3 Code Structure
+#### 20.2.1 Required Libraries
+- **opencv-python** (or opencv-contrib-python): Version 4.5+ recommended
+  - Installation: `pip install opencv-python`
+  - For extra modules: `pip install opencv-contrib-python`
+- **numpy**: Version 1.19+
+  - Installation: `pip install numpy`
+  - Used for: Array operations, numerical computations
+
+#### 20.2.2 Optional Libraries
+- **pybgs**: BGSLibrary Python bindings
+  - Installation: `pip install pybgs`
+  - Use when: Need advanced background subtraction algorithms
+- **PyYAML**: For YAML configuration files
+  - Installation: `pip install pyyaml`
+  - Alternative: Use JSON (built-in, no installation needed)
+- **matplotlib**: For offline visualization and analysis
+  - Installation: `pip install matplotlib`
+- **pandas**: For telemetry data analysis
+  - Installation: `pip install pandas`
+
+#### 20.2.3 Complete Installation Command
+```
+# Minimal installation (OpenCV only)
+pip install opencv-python numpy
+
+# With bgslibrary
+pip install opencv-python numpy pybgs
+
+# Full installation
+pip install opencv-python numpy pybgs pyyaml matplotlib pandas
+```
+
+### 20.3 Code Structure
 Modular architecture with separate modules:
 - `video_io.py`: Video input/output handling
-- `background_subtraction.py`: Background subtraction algorithms
+- `background_subtraction.py`: Background subtraction algorithms (OpenCV/bgslibrary wrapper)
 - `object_detection.py`: Object detection and filtering
 - `tracking.py`: Tracking logic and state management
 - `ptz_control.py`: Virtual PTZ calculations
@@ -867,14 +1832,14 @@ Modular architecture with separate modules:
 - `main.py`: Main application loop and orchestration
 - `utils.py`: Utility functions and helpers
 
-### 19.4 Coding Standards
+### 20.4 Coding Standards
 - Follow PEP 8 style guidelines
 - Type hints for function signatures
 - Docstrings for all classes and functions
 - Comprehensive error handling
 - Avoid global variables (use class-based state)
 
-### 19.5 Documentation
+### 20.5 Documentation
 - README with setup and usage instructions
 - Architecture diagram
 - Configuration parameter reference

@@ -1,0 +1,23 @@
+# Alternative minimal Pixi configuration
+# Use this instead of pyproject.toml for simpler setup
+
+[project]
+name = "ptz-tracker"
+version = "0.1.0"
+description = "PTZ Camera Object Tracking System"
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
+
+[dependencies]
+python = ">=3.8,<3.12"
+opencv = ">=4.5"
+numpy = ">=1.19"
+pyyaml = ">=5.0"
+
+[pypi-dependencies]
+pybgs = "*"
+
+[tasks]
+track = "python main.py"
+track-config = "python main.py --config config.yaml"
+version = "python --version && python -c \"import cv2, numpy; print(f'OpenCV: {cv2.__version__}'); print(f'NumPy: {numpy.__version__}')\""

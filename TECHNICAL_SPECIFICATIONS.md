@@ -1786,60 +1786,361 @@ When using bgslibrary instead of OpenCV's built-in subtractors:
 - **Primary**: Python 3.8+
 - **Rationale**: Rich ecosystem for computer vision (OpenCV, NumPy)
 
-### 20.2 Key Dependencies
+### 20.2 Environment Management with Pixi
 
-#### 20.2.1 Required Libraries
-- **opencv-python** (or opencv-contrib-python): Version 4.5+ recommended
-  - Installation: `pip install opencv-python`
-  - For extra modules: `pip install opencv-contrib-python`
-- **numpy**: Version 1.19+
-  - Installation: `pip install numpy`
+#### 20.2.1 Why Pixi?
+- **Modern package manager**: Fast, reproducible environments
+- **Cross-platform**: Works on Windows, Linux, macOS
+- **Lock files**: Ensures reproducible builds
+- **Conda + PyPI**: Access to both conda-forge and PyPI packages
+- **Task runner**: Built-in task execution
+- **No separate venv**: Automatic environment isolation
+
+#### 20.2.2 Pixi Installation
+Visit: https://pixi.sh or install via:
+```bash
+# Linux/macOS
+curl -fsSL https://pixi.sh/install.sh | bash
+
+# Windows (PowerShell)
+iwr -useb https://pixi.sh/install.ps1 | iex
+
+# Verify installation
+pixi --version
+```
+
+#### 20.2.3 Project Dependencies
+
+**Required Libraries:**
+- **opencv**: Computer vision library (from conda-forge)
+  - Provides: cv2 module, video I/O, image processing
+  - Version: 4.5+
+- **numpy**: Numerical computing
+  - Version: 1.19+
   - Used for: Array operations, numerical computations
+- **python**: Python interpreter
+  - Version: 3.8-3.11 recommended
 
-#### 20.2.2 Optional Libraries
-- **pybgs**: BGSLibrary Python bindings
-  - Installation: `pip install pybgs`
-  - Use when: Need advanced background subtraction algorithms
-- **PyYAML**: For YAML configuration files
-  - Installation: `pip install pyyaml`
-  - Alternative: Use JSON (built-in, no installation needed)
-- **matplotlib**: For offline visualization and analysis
-  - Installation: `pip install matplotlib`
-- **pandas**: For telemetry data analysis
-  - Installation: `pip install pandas`
+**Optional Libraries:**
+- **pybgs**: BGSLibrary Python bindings (from PyPI)
+  - Installation: Via pip in Pixi environment
+  - Use when: Need advanced background subtraction algorithms (43+ algorithms)
+- **pyyaml**: YAML configuration support
+  - Alternative: Use JSON (built-in)
+- **matplotlib**: Visualization and plotting
+  - For: Offline analysis, trajectory visualization
+- **pandas**: Data analysis and telemetry processing
+  - For: CSV/JSON log analysis
 
-#### 20.2.3 Complete Installation Command
+**Development Tools:**
+- **ipython**: Enhanced interactive shell
+- **pytest**: Testing framework (for unit tests)
+
+#### 20.2.4 Pixi Configuration File (pyproject.toml)
+
+Create `pyproject.toml` in project root:
+
+```toml
+[project]
+name = "ptz-tracker"
+version = "0.1.0"
+description = "PTZ Camera Object Tracking System with Background Subtraction"
+authors = [{name = "Your Name", email = "your.email@example.com"}]
+requires-python = ">=3.8,<3.12"
+readme = "README.md"
+license = {text = "MIT"}
+
+[tool.pixi.project]
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
+
+[tool.pixi.pypi-dependencies]
+pybgs = "*"  # BGSLibrary - only available on PyPI
+
+[tool.pixi.dependencies]
+python = ">=3.8,<3.12"
+opencv = ">=4.5"
+numpy = ">=1.19"
+pyyaml = ">=5.0"
+
+[tool.pixi.feature.viz.dependencies]
+matplotlib = ">=3.5"
+pandas = ">=1.3"
+
+[tool.pixi.feature.dev.dependencies]
+ipython = "*"
+pytest = ">=7.0"
+
+# Tasks for common operations
+[tool.pixi.tasks]
+# Run the main tracking application
+track = "python main.py"
+
+# Run with specific config
+track-config = "python main.py --config config.yaml"
+
+# Run tests
+test = "pytest tests/"
+
+# Interactive Python shell
+shell = "ipython"
+
+# Clean generated files
+clean = "rm -rf output/*.mp4 logs/*.log"
+
+[tool.pixi.environments]
+default = {solve-group = "default"}
+viz = {features = ["viz"], solve-group = "default"}
+dev = {features = ["dev", "viz"], solve-group = "default"}
 ```
-# Minimal installation (OpenCV only)
-pip install opencv-python numpy
 
-# With bgslibrary
-pip install opencv-python numpy pybgs
+#### 20.2.5 Alternative: Minimal pixi.toml
 
-# Full installation
-pip install opencv-python numpy pybgs pyyaml matplotlib pandas
+For simpler projects, use `pixi.toml`:
+
+```toml
+[project]
+name = "ptz-tracker"
+version = "0.1.0"
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
+
+[dependencies]
+python = ">=3.8,<3.12"
+opencv = ">=4.5"
+numpy = ">=1.19"
+
+[pypi-dependencies]
+pybgs = "*"
+
+[tasks]
+track = "python main.py"
 ```
 
-### 20.3 Code Structure
-Modular architecture with separate modules:
-- `video_io.py`: Video input/output handling
-- `background_subtraction.py`: Background subtraction algorithms (OpenCV/bgslibrary wrapper)
-- `object_detection.py`: Object detection and filtering
-- `tracking.py`: Tracking logic and state management
-- `ptz_control.py`: Virtual PTZ calculations
-- `rendering.py`: Frame rendering and overlays
-- `config.py`: Configuration loading and validation
-- `main.py`: Main application loop and orchestration
-- `utils.py`: Utility functions and helpers
+#### 20.2.6 Project Setup with Pixi
 
-### 20.4 Coding Standards
+**Initial Setup:**
+```bash
+# Navigate to project directory
+cd PTZ_tracker_dumb
+
+# Initialize Pixi project (if not already done)
+pixi init
+
+# Or use the pyproject.toml above and install
+pixi install
+
+# Install with visualization features
+pixi install --environment viz
+
+# Install development environment
+pixi install --environment dev
+```
+
+**Running the Application:**
+```bash
+# Run main tracking application
+pixi run track
+
+# Run with specific config file
+pixi run track-config
+
+# Or run Python directly in Pixi environment
+pixi run python main.py
+
+# Run with arguments
+pixi run python main.py --input video.mp4 --output result.mp4
+```
+
+**Development Workflow:**
+```bash
+# Enter Pixi shell (activates environment)
+pixi shell
+
+# Now you're in the environment, run commands normally:
+python main.py
+ipython
+pytest tests/
+
+# Exit shell
+exit
+```
+
+**Managing Dependencies:**
+```bash
+# Add a new dependency
+pixi add scipy
+
+# Add PyPI package
+pixi add --pypi scikit-image
+
+# Remove dependency
+pixi remove scipy
+
+# Update all dependencies
+pixi update
+
+# Show installed packages
+pixi list
+```
+
+#### 20.2.7 Environment Isolation
+
+Pixi automatically handles environment isolation:
+- **No manual venv activation needed**
+- **Reproducible across machines** via `pixi.lock` file
+- **Automatic environment selection** based on tasks/commands
+- **Per-project environments** (not system-wide)
+
+#### 20.2.8 Cross-Platform Compatibility
+
+Pixi ensures the project works across platforms:
+```bash
+# On Linux
+pixi run track
+
+# On macOS (ARM or Intel)
+pixi run track
+
+# On Windows
+pixi run track
+```
+
+Same commands, same results!
+
+#### 20.2.9 Quick Start Commands
+
+```bash
+# Clone and setup
+git clone <repository-url>
+cd PTZ_tracker_dumb
+pixi install
+
+# Run application
+pixi run track
+
+# Run with custom video
+pixi run python main.py --input path/to/video.mp4
+
+# Development mode
+pixi shell
+python main.py  # Run inside Pixi shell
+
+# Run tests
+pixi run test
+```
+
+#### 20.2.10 Legacy pip Installation (Alternative)
+
+If Pixi is not available, fall back to traditional pip:
+```bash
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Linux/macOS
+# or: venv\Scripts\activate  # Windows
+
+# Install dependencies
+pip install opencv-python numpy pybgs pyyaml
+
+# Run application
+python main.py
+```
+
+### 20.3 Project Structure
+
+```
+PTZ_tracker_dumb/
+├── pyproject.toml                 # Pixi configuration (recommended)
+├── pixi.toml                      # Alternative minimal Pixi config
+├── pixi.lock                      # Pixi lock file (auto-generated)
+├── config.yaml                    # Application configuration
+├── .gitignore                     # Git ignore rules
+├── README.md                      # Project documentation
+├── TECHNICAL_SPECIFICATIONS.md    # This file
+├── main.py                        # Main application entry point
+├── src/                           # Source code directory
+│   ├── __init__.py
+│   ├── video_io.py               # Video input/output handling
+│   ├── background_subtraction.py # Background subtraction (OpenCV/bgslibrary)
+│   ├── object_detection.py       # Object detection and filtering
+│   ├── tracking.py               # Tracking logic and state management
+│   ├── ptz_control.py            # Virtual PTZ calculations
+│   ├── rendering.py              # Frame rendering and overlays
+│   ├── config.py                 # Configuration loading and validation
+│   └── utils.py                  # Utility functions and helpers
+├── tests/                         # Unit tests (pytest)
+│   ├── __init__.py
+│   ├── test_background_subtraction.py
+│   ├── test_object_detection.py
+│   └── test_ptz_control.py
+├── logs/                          # Log files (auto-generated)
+│   ├── tracking.log
+│   └── telemetry.csv
+├── output/                        # Output videos (auto-generated)
+│   └── output.mp4
+└── input/                         # Input videos
+    └── example.mp4
+```
+
+### 20.4 Code Module Architecture
+
+**Core Modules:**
+
+1. **video_io.py**: Video input/output handling
+   - VideoCapture wrapper
+   - VideoWriter wrapper
+   - Frame buffering
+
+2. **background_subtraction.py**: Background subtraction algorithms
+   - OpenCV subtractor wrapper (MOG2, KNN, etc.)
+   - BGSLibrary wrapper (SuBSENSE, PAWCS, etc.)
+   - Mask post-processing pipeline
+   - Unified interface for both libraries
+
+3. **object_detection.py**: Object detection and filtering
+   - Contour detection
+   - Filtering (area, aspect ratio, solidity)
+   - Bounding box calculation
+   - Centroid calculation
+
+4. **tracking.py**: Tracking logic and state management
+   - State machine (IDLE, ACQUIRING, TRACKING, LOST)
+   - Object association
+   - Confidence scoring
+   - Trajectory recording
+
+5. **ptz_control.py**: Virtual PTZ calculations
+   - Pan/tilt calculation from centroid
+   - Zoom control from object size
+   - Smoothing and deadband
+   - ROI calculation
+
+6. **rendering.py**: Frame rendering and overlays
+   - ROI extraction and resizing
+   - Bounding box overlay
+   - Crosshair overlay
+   - Text information overlay
+   - Trajectory visualization
+
+7. **config.py**: Configuration loading and validation
+   - YAML/JSON loading
+   - Parameter validation
+   - Default values
+
+8. **main.py**: Main application loop and orchestration
+   - Initialize all components
+   - Main processing loop
+   - User input handling
+   - Cleanup
+
+### 20.5 Coding Standards
 - Follow PEP 8 style guidelines
 - Type hints for function signatures
 - Docstrings for all classes and functions
 - Comprehensive error handling
 - Avoid global variables (use class-based state)
 
-### 20.5 Documentation
+### 20.6 Documentation
 - README with setup and usage instructions
 - Architecture diagram
 - Configuration parameter reference

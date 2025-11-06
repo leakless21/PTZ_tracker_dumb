@@ -12,7 +12,7 @@ A real-time object tracking system using background subtraction and simulated PT
 - **Virtual PTZ**: Simulated pan, tilt, and zoom on video files
 - **Real-time Visualization**: Multi-object boxes (cyan) in detection mode, locked object (green)
 - **Debug Mosaic**: 2×4 grid showing all pipeline stages
-- **Mouse Selection**: Click to select and lock onto specific objects
+- **Keyboard Selection**: Press numeric keys (0-9) to select and lock onto tracked objects by ID
 - **Configurable**: YAML-based configuration system
 
 ## Quick Start with Pixi

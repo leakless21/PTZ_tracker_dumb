@@ -65,7 +65,6 @@ tracking:
   selection:
     method: "largest"  # Options: largest, center, manual, auto
     auto_select_threshold: 30  # Frames before auto-selecting (if auto enabled)
-    click_tolerance: 50  # Pixels tolerance for manual selection
     min_track_age: 5  # Minimum frames tracked before selectable
 
   # Mode Transition

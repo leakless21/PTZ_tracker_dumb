@@ -733,15 +733,25 @@ if state == 'DETECTION_MODE' and auto_select_enabled:
         transition_to_locked_mode(largest_obj)
 ```
 
-#### 6.9.2 Manual Selection (Mouse Click)
+#### 6.9.2 Manual Selection (Keyboard ID Input)
 ```python
-def on_mouse_click(event, x, y, flags, param):
-    if event == cv2.EVENT_LBUTTONDOWN and state == 'DETECTION_MODE':
-        # Find tracked object nearest to click
-        clicked_obj = find_nearest_tracked_object(x, y, tracked_objects)
+# User types the ID number of the object they want to lock onto
+if state == 'DETECTION_MODE':
+    key = cv2.waitKey(1) & 0xFF
 
-        if clicked_obj and distance(clicked_obj.estimate, [x, y]) < threshold:
-            transition_to_locked_mode(clicked_obj)
+    # Check if numeric key pressed (0-9)
+    if ord('0') <= key <= ord('9'):
+        typed_id = int(chr(key))
+
+        # Find tracked object with this ID
+        selected_obj = None
+        for obj in tracked_objects:
+            if obj.id == typed_id:
+                selected_obj = obj
+                break
+
+        if selected_obj:
+            transition_to_locked_mode(selected_obj)
 ```
 
 #### 6.9.3 Automatic Selection (Center Object)
@@ -1634,11 +1644,13 @@ For each frame:
 - **O**: Toggle overlays on/off (optional)
 - **F**: Toggle fullscreen mode (optional)
 
-### 15.3 Mouse Controls
-- **Left Click**: Select and lock onto object (transitions from DETECTION_MODE to LOCKED_MODE)
-  - Click near a tracked object (within 50 pixels)
+### 15.3 Object Selection Controls
+- **Number Keys (0-9)**: Select and lock onto tracked object by ID (transitions from DETECTION_MODE to LOCKED_MODE)
+  - Each tracked object displays its ID number on screen (cyan text)
+  - Press the corresponding number key (0-9) to lock onto that object
   - Object will be locked using CSRT tracker
   - Green bounding box indicates locked object
+  - Only available in DETECTION_MODE
 
 ### 15.4 Status Display
 Real-time information shown in overlay:
@@ -1875,18 +1887,7 @@ tracking_state = {
 }
 ```
 
-**Step 7: Setup Mouse Callback** (for manual selection)
-```
-def on_mouse_click(event, x, y, flags, param):
-    if event == cv2.EVENT_LBUTTONDOWN:
-        param['click_pos'] = (x, y)
-        param['click_flag'] = True
-
-mouse_params = {'click_pos': None, 'click_flag': False}
-cv2.setMouseCallback('PTZ Tracking', on_mouse_click, mouse_params)
-```
-
-**Step 8: Initialize Video Writer** (if saving output)
+**Step 7: Initialize Video Writer** (if saving output)
 ```
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter(
@@ -1897,10 +1898,9 @@ out = cv2.VideoWriter(
 )
 ```
 
-**Step 9: Create Display Window**
+**Step 8: Create Display Window**
 ```
 cv2.namedWindow('PTZ Tracking', cv2.WINDOW_NORMAL)
-cv2.setMouseCallback('PTZ Tracking', on_mouse_click, mouse_params)
 ```
 
 #### 19.1.2 Main Processing Loop
@@ -2028,40 +2028,8 @@ while True:
                     cv2.putText(original_frame, f"ID:{tracked_obj.id}", (x, y-10),
                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
 
-        # Check for object selection (mouse click or automatic)
-        if mouse_params['click_flag']:
-            click_x, click_y = mouse_params['click_pos']
-            mouse_params['click_flag'] = False
-
-            # Find closest tracked object to click
-            min_dist = float('inf')
-            selected_obj = None
-
-            for tracked_obj in tracked_objects:
-                if tracked_obj.last_detection is not None:
-                    pos = tracked_obj.estimate[0]
-                    dist = np.sqrt((pos[0] - click_x)**2 + (pos[1] - click_y)**2)
-                    if dist < min_dist and dist < 50:  # 50 pixel tolerance
-                        min_dist = dist
-                        selected_obj = tracked_obj
-
-            # Transition to LOCKED_MODE
-            if selected_obj and selected_obj.last_detection is not None:
-                bbox = selected_obj.last_detection.data.get('bbox')
-                if bbox:
-                    # Initialize CSRT tracker
-                    csrt_tracker = cv2.TrackerCSRT_create()
-                    success = csrt_tracker.init(original_frame, bbox)
-
-                    if success:
-                        tracking_state['mode'] = 'LOCKED_MODE'
-                        tracking_state['csrt_tracker'] = csrt_tracker
-                        tracking_state['selected_object_id'] = selected_obj.id
-                        tracking_state['locked_bbox'] = bbox
-                        tracking_state['frames_since_lock'] = 0
-                        tracking_state['last_known_position'] = (bbox[0] + bbox[2]/2, bbox[1] + bbox[3]/2)
-                        tracking_state['last_known_size'] = (bbox[2], bbox[3])
-                        print(f"[TRACKING] Locked onto object ID: {selected_obj.id}")
+        # No automatic selection - user must press ID number to lock
+        # (Selection logic is in keyboard handler at Step 13)
 
         # Select largest object for PTZ control (even in detection mode)
         if tracked_objects:
@@ -2321,6 +2289,46 @@ while True:
             print("[TRACKING] Manually released lock")
         # Reset PTZ
         ptz_state = {'pan': 0.0, 'tilt': 0.0, 'zoom': 1.0}
+    elif ord('0') <= key <= ord('9'):
+        # Select tracked object by ID (0-9)
+        if tracking_state['mode'] == 'DETECTION_MODE':
+            typed_id = key - ord('0')  # Convert to integer ID
+
+            # Find tracked object with this ID
+            selected_obj = None
+            for tracked_obj in tracked_objects:
+                if tracked_obj.id == typed_id:
+                    selected_obj = tracked_obj
+                    break
+
+            if selected_obj and selected_obj.last_detection is not None:
+                # Get bbox from selected object
+                bbox = selected_obj.last_detection.data.get('bbox')
+                if bbox:
+                    # Initialize CSRT tracker
+                    csrt_tracker = cv2.TrackerCSRT_create()
+                    success = csrt_tracker.init(original_frame, bbox)
+
+                    if success:
+                        # Transition to LOCKED_MODE
+                        tracking_state['mode'] = 'LOCKED_MODE'
+                        tracking_state['csrt_tracker'] = csrt_tracker
+                        tracking_state['selected_object_id'] = typed_id
+                        tracking_state['locked_bbox'] = bbox
+                        tracking_state['frames_since_lock'] = 0
+                        tracking_state['frames_lost'] = 0
+
+                        x, y, w, h = bbox
+                        tracking_state['last_known_position'] = (x + w/2, y + h/2)
+                        tracking_state['last_known_size'] = (w, h)
+
+                        print(f"[TRACKING] Locked onto object ID {typed_id}")
+                    else:
+                        print(f"[TRACKING] Failed to initialize CSRT for ID {typed_id}")
+                else:
+                    print(f"[TRACKING] No bbox data for ID {typed_id}")
+            else:
+                print(f"[TRACKING] Object ID {typed_id} not found")
     elif key == ord('d'):
         # Toggle debug mosaic
         show_debug_mosaic = not show_debug_mosaic

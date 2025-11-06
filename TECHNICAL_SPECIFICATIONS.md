@@ -175,7 +175,7 @@ The system has **four primary states**:
 
 ### 3.3 State Transition Diagram
 
-```
+'''
                     ┌──────────────┐
                     │   IDLE       │
                     └──────┬───────┘
@@ -200,7 +200,7 @@ or manual │         │ (searching)  │─────────┘ release
 release   │         └──────┬───────┘
           │                │ Object found
           └────────────────┘
-```
+'''
 
 ### 3.4 System State Data Structure
 
@@ -406,7 +406,7 @@ system:
 
 ### 5.1 Library Selection
 
-OpenCV provides basic background subtraction classes:
+The system exclusively uses OpenCV for background subtraction. OpenCV provides several algorithms:
 
 - **cv2.createBackgroundSubtractorMOG2()**: Gaussian Mixture Model
 - **cv2.createBackgroundSubtractorKNN()**: K-Nearest Neighbors based
@@ -603,7 +603,6 @@ _, fgMask = cv2.threshold(fgMask, 130, 255, cv2.THRESH_BINARY)
 - Gaussian blur adds noise reduction beyond morphological operations
 - Sequence is optimized: removes noise first, then smooths, then finalizes
 - Threshold value of 130 is stricter, reducing false positives
-- Works well with both OpenCV and bgslibrary outputs
 - Simple and effective for most scenarios
 
 ---
@@ -774,11 +773,11 @@ The Tracking Controller implements the dual-mode tracking system described in **
 
 **Installation**:
 
-```bash
+'''bash
 pip install norfair
 # or with Pixi:
 pixi add --pypi norfair
-```
+'''
 
 **Key Features**:
 
@@ -2243,647 +2242,6 @@ Provide test videos covering:
 
 ---
 
-## 20. BGSLIBRARY IMPLEMENTATION WORKFLOW
-
-### 20.1 Complete Pipeline with BGSLibrary
-
-This section provides the detailed step-by-step workflow for implementing the system using BGSLibrary.
-
-#### 20.1.1 Initialization Phase
-
-**Step 1: Import Libraries**
-
-```python
-# Required imports
-import cv2                # For video I/O and image processing
-import numpy as np        # For array operations
-import pybgs              # For background subtraction (BGSLibrary)
-import time               # For FPS calculation and timing
-import yaml               # For configuration file loading
-
-# For tracking
-from norfair import Detection, Tracker
-from norfair.distances import euclidean_distance
-```
-
-**Step 2: Load Configuration**
-
-- Read JSON/YAML config file
-- Set default values for missing parameters
-- Validate parameter ranges
-
-**Step 3: Initialize Video Capture**
-
-```
-cap = cv2.VideoCapture(input_video_path)
-Verify: if not cap.isOpened(): handle error
-Get properties:
-  - frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-  - frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-  - fps = cap.get(cv2.CAP_PROP_FPS)
-  - total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-```
-
-**Step 4: Initialize Background Subtractor**
-
-_Primary Option: BGSLibrary (Recommended)_
-
-```python
-import pybgs
-
-# Default: PAWCS (best balance of speed and accuracy)
-bg_subtractor = pybgs.PAWCS()
-
-# Alternative algorithms:
-# bg_subtractor = pybgs.SuBSENSE()        # Highest accuracy
-# bg_subtractor = pybgs.ViBe()            # Balanced
-# bg_subtractor = pybgs.SigmaDelta()      # Good for lighting changes
-# bg_subtractor = pybgs.LOBSTER()         # Robust
-# bg_subtractor = pybgs.FrameDifference() # Fastest (testing only)
-```
-
-_Legacy Option: OpenCV (if needed)_
-
-```python
-# OpenCV MOG2
-bg_subtractor = cv2.createBackgroundSubtractorMOG2(
-    history=500,
-    varThreshold=16,
-    detectShadows=True
-)
-
-# Or OpenCV KNN
-# bg_subtractor = cv2.createBackgroundSubtractorKNN(
-#     history=500,
-#     dist2Threshold=400.0,
-#     detectShadows=True
-# )
-```
-
-**Step 5: Initialize System State**
-
-```
-from norfair import Detection, Tracker
-from norfair.distances import euclidean_distance
-
-# Initialize Norfair tracker for detection mode
-norfair_tracker = Tracker(
-    distance_function=euclidean_distance,
-    distance_threshold=50,
-    hit_counter_max=10,
-    initialization_delay=3,
-    pointwise_hit_counter_max=4
-)
-
-# Initialize system-wide state (see Section 3.4 for complete structure)
-system_state = {
-    # Current state
-    'mode': 'DETECTION_MODE',  # DETECTION_MODE, LOCKED_MODE, LOST, IDLE
-
-    # Tracker instances
-    'norfair_tracker': norfair_tracker,
-    'csrt_tracker': None,  # Initialized when object is locked
-
-    # Tracked objects (from Norfair in DETECTION_MODE)
-    'tracked_objects': [],
-
-    # Locked object info (in LOCKED_MODE)
-    'selected_object_id': None,  # ID of locked object (0-9)
-    'locked_bbox': None,         # Current bbox: (x, y, w, h)
-    'frames_since_lock': 0,
-
-    # Recovery info (in LOST state)
-    'frames_lost': 0,
-    'recovery_start_time': None,
-    'last_known_position': None,  # (x, y) centroid
-    'last_known_size': None,      # (w, h) dimensions
-
-    # PTZ state
-    'ptz': {
-        'pan': 0.0,   # degrees
-        'tilt': 0.0,  # degrees
-        'zoom': 1.0   # magnification
-    },
-
-    # Frame tracking
-    'frame_count': 0,
-    'timestamp': 0.0
-}
-```
-
-**Step 6: Initialize Output Streams**
-
-**Step 7: Initialize Video Writer** (if saving output)
-
-```
-fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter(
-    output_video_path,
-    fourcc,
-    fps,
-    (frame_width, frame_height)
-)
-```
-
-**Step 8: Create Display Window**
-
-```
-cv2.namedWindow('PTZ Tracking', cv2.WINDOW_NORMAL)
-```
-
-#### 20.1.2 Main Processing Loop
-
-**Frame-by-frame processing structure:**
-
-```
-frame_count = 0
-
-while True:
-    # STEP 1: Capture Frame
-    ret, frame = cap.read()
-    if not ret:
-        if loop_playback:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            continue
-        else:
-            break
-
-    frame_count += 1
-    original_frame = frame.copy()  # Keep original for display
-
-    # STEP 2: Background Subtraction
-    # For BGSLibrary (default):
-    fg_mask = bg_subtractor.apply(frame)
-
-    # For OpenCV (legacy):
-    # fg_mask = bg_subtractor.apply(frame, learningRate=0.01)
-
-    # STEP 3: Post-process Foreground Mask
-    # Save intermediate stages for debug mosaic
-    mask_stages = {}
-    mask_stages['raw'] = fg_mask.copy()
-
-    # Recommended cleanup sequence:
-    kernel = np.ones((5, 5), np.uint8)
-    fg_mask = cv2.erode(fg_mask, kernel, iterations=1)
-    mask_stages['erosion'] = fg_mask.copy()
-
-    fg_mask = cv2.dilate(fg_mask, kernel, iterations=1)
-    mask_stages['dilation'] = fg_mask.copy()
-
-    fg_mask = cv2.GaussianBlur(fg_mask, (3, 3), 0)
-    mask_stages['blur'] = fg_mask.copy()
-
-    fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel)
-    mask_stages['closing'] = fg_mask.copy()
-
-    _, fg_mask = cv2.threshold(fg_mask, 130, 255, cv2.THRESH_BINARY)
-    mask_stages['final'] = fg_mask.copy()
-
-    # STEP 4: Find Contours
-    contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    # STEP 5: Filter and Select Object
-    valid_objects = []
-
-    for contour in contours:
-        # Area filtering
-        area = cv2.contourArea(contour)
-        if area < min_area or area > max_area_fraction * frame_width * frame_height:
-            continue
-
-        # Get bounding box
-        x, y, w, h = cv2.boundingRect(contour)
-
-        # Aspect ratio filtering
-        aspect_ratio = w / h if h > 0 else 0
-        if aspect_ratio < min_aspect or aspect_ratio > max_aspect:
-            continue
-
-        # Solidity filtering
-        hull = cv2.convexHull(contour)
-        hull_area = cv2.contourArea(hull)
-        solidity = area / hull_area if hull_area > 0 else 0
-        if solidity < min_solidity:
-            continue
-
-        # Calculate centroid
-        M = cv2.moments(contour)
-        if M['m00'] != 0:
-            cx = int(M['m10'] / M['m00'])
-            cy = int(M['m01'] / M['m00'])
-        else:
-            cx = x + w // 2
-            cy = y + h // 2
-
-        # Store valid object
-        valid_objects.append({
-            'contour': contour,
-            'bbox': (x, y, w, h),
-            'centroid': (cx, cy),
-            'area': area
-        })
-
-    # STEP 6: Update Trackers (Dual Mode)
-
-    current_bbox = None  # Will be set based on tracking mode
-
-    if system_state['mode'] == 'DETECTION_MODE':
-        # DETECTION MODE: Use Norfair for multi-object tracking
-
-        # Create Norfair detections from valid objects
-        detections = []
-        for obj in valid_objects:
-            cx, cy = obj['centroid']
-            detection = Detection(
-                points=np.array([[cx, cy]]),
-                scores=np.array([1.0]),  # Confidence score
-                data={'bbox': obj['bbox'], 'area': obj['area']}
-            )
-            detections.append(detection)
-
-        # Update Norfair tracker
-        tracked_objects = norfair_tracker.update(detections=detections)
-
-        # Draw all tracked objects (multi-object visualization)
-        for tracked_obj in tracked_objects:
-            if tracked_obj.last_detection is not None:
-                bbox = tracked_obj.last_detection.data.get('bbox')
-                if bbox:
-                    x, y, w, h = bbox
-                    # Draw cyan boxes for all tracked objects
-                    cv2.rectangle(original_frame, (x, y), (x+w, y+h), (255, 255, 0), 2)
-                    # Draw track ID
-                    cv2.putText(original_frame, f"ID:{tracked_obj.id}", (x, y-10),
-                              cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
-
-        # No automatic selection - user must press ID number to lock
-        # (Selection logic is in keyboard handler at Step 13)
-
-        # Select largest object for PTZ control (even in detection mode)
-        if tracked_objects:
-            largest_obj = None
-            max_area = 0
-            for tracked_obj in tracked_objects:
-                if tracked_obj.last_detection is not None:
-                    area = tracked_obj.last_detection.data.get('area', 0)
-                    if area > max_area:
-                        max_area = area
-                        largest_obj = tracked_obj
-
-            if largest_obj and largest_obj.last_detection is not None:
-                current_bbox = largest_obj.last_detection.data.get('bbox')
-
-    elif system_state['mode'] == 'LOCKED_MODE':
-        # LOCKED MODE: Use CSRT for single-object tracking
-
-        csrt_tracker = system_state['csrt_tracker']
-        success, bbox = csrt_tracker.update(original_frame)
-
-        if success:
-            # CSRT tracking successful
-            x, y, w, h = map(int, bbox)
-
-            # Validate bbox
-            if (x >= 0 and y >= 0 and
-                x + w <= frame_width and y + h <= frame_height and
-                w * h >= 100 and w * h <= frame_width * frame_height * 0.8):
-
-                current_bbox = (x, y, w, h)
-                system_state['locked_bbox'] = current_bbox
-                system_state['frames_since_lock'] += 1
-                system_state['frames_lost'] = 0
-                system_state['last_known_position'] = (x + w/2, y + h/2)
-                system_state['last_known_size'] = (w, h)
-
-                # Draw green box for locked object
-                cv2.rectangle(original_frame, (x, y), (x+w, y+h), (0, 255, 0), 3)
-                cv2.putText(original_frame, "LOCKED", (x, y-10),
-                          cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            else:
-                # Invalid bbox - tracking lost
-                system_state['mode'] = 'LOST'
-                system_state['frames_lost'] = 0
-                print("[TRACKING] CSRT lost: Invalid bbox")
-        else:
-            # CSRT tracking failed
-            system_state['mode'] = 'LOST'
-            system_state['frames_lost'] = 0
-            print("[TRACKING] CSRT lost: Tracking failure")
-
-    elif system_state['mode'] == 'LOST':
-        # LOST MODE: Attempt recovery using background subtraction
-
-        system_state['frames_lost'] += 1
-
-        if system_state['frames_lost'] <= lost_frames_threshold:
-            # Search for object near last known position
-            last_pos = system_state['last_known_position']
-            last_size = system_state['last_known_size']
-
-            if last_pos and last_size:
-                search_radius = 150
-                best_match = None
-                best_score = 0
-
-                for obj in valid_objects:
-                    cx, cy = obj['centroid']
-                    x, y, w, h = obj['bbox']
-
-                    # Distance from last position
-                    dist = np.sqrt((cx - last_pos[0])**2 + (cy - last_pos[1])**2)
-
-                    # Size similarity
-                    size_ratio = min(w/last_size[0], last_size[0]/w) * min(h/last_size[1], last_size[1]/h)
-
-                    # Combined score
-                    if dist < search_radius:
-                        score = size_ratio * (1 - dist / search_radius)
-                        if score > best_score and size_ratio > 0.5:
-                            best_score = score
-                            best_match = obj
-
-                if best_match and best_score > 0.5:
-                    # Reacquired! Reinitialize CSRT
-                    bbox = best_match['bbox']
-                    csrt_tracker = cv2.TrackerCSRT_create()
-                    success = csrt_tracker.init(original_frame, bbox)
-
-                    if success:
-                        system_state['mode'] = 'LOCKED_MODE'
-                        system_state['csrt_tracker'] = csrt_tracker
-                        system_state['locked_bbox'] = bbox
-                        system_state['frames_lost'] = 0
-                        print(f"[TRACKING] Reacquired object!")
-
-                # Draw search area
-                lx, ly = int(last_pos[0]), int(last_pos[1])
-                cv2.circle(original_frame, (lx, ly), search_radius, (0, 0, 255), 2)
-                cv2.putText(original_frame, "SEARCHING...", (lx-50, ly-search_radius-10),
-                          cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        else:
-            # Recovery timeout - return to detection mode
-            system_state['mode'] = 'DETECTION_MODE'
-            system_state['csrt_tracker'] = None
-            system_state['selected_object_id'] = None
-            system_state['locked_bbox'] = None
-            print("[TRACKING] Recovery timeout - returning to DETECTION_MODE")
-
-    # STEP 7: Calculate PTZ Adjustments
-    if current_bbox is not None:
-        x, y, w, h = current_bbox
-        cx = x + w / 2
-        cy = y + h / 2
-
-        # Calculate error from center
-        error_x = (cx - frame_width / 2) / frame_width
-        error_y = (cy - frame_height / 2) / frame_height
-
-        # Apply deadband
-        if abs(error_x) > deadband_x:
-            system_state['ptz']['pan'] += error_x * pan_sensitivity
-        if abs(error_y) > deadband_y:
-            system_state['ptz']['tilt'] += error_y * tilt_sensitivity
-
-        # Zoom control based on object size
-        x, y, w, h = target_object['bbox']
-        object_size = max(w, h)
-        desired_size = frame_width * 0.3  # Target: object fills 30% of frame
-
-        if object_size < desired_size * 0.8:
-            # Object too small, zoom in
-            system_state['ptz']['zoom'] += zoom_speed
-        elif object_size > desired_size * 1.2:
-            # Object too large, zoom out
-            system_state['ptz']['zoom'] -= zoom_speed
-
-        # Clamp zoom
-        system_state['ptz']['zoom'] = np.clip(system_state['ptz']['zoom'], min_zoom, max_zoom)
-
-        # Apply smoothing (exponential moving average)
-        # ptz_state values would be smoothed here
-
-    # STEP 8: Calculate ROI from PTZ State
-    zoom = system_state['ptz']['zoom']
-    roi_w = int(frame_width / zoom)
-    roi_h = int(frame_height / zoom)
-
-    # Center based on pan/tilt (simplified - pan/tilt affect center position)
-    # For simulation, pan/tilt can shift the ROI center
-    center_x = frame_width // 2 + int(system_state['ptz']['pan'])
-    center_y = frame_height // 2 + int(system_state['ptz']['tilt'])
-
-    roi_x = center_x - roi_w // 2
-    roi_y = center_y - roi_h // 2
-
-    # Clamp ROI to frame boundaries
-    roi_x = max(0, min(roi_x, frame_width - roi_w))
-    roi_y = max(0, min(roi_y, frame_height - roi_h))
-
-    # STEP 9: Extract and Resize ROI (Virtual PTZ)
-    roi = original_frame[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w]
-    ptz_view = cv2.resize(roi, (frame_width, frame_height), interpolation=cv2.INTER_LINEAR)
-
-    # STEP 10: Draw Overlays
-    display_frame = ptz_view.copy()
-
-    # Draw bounding box (if tracking)
-    if system_state['status'] == 'TRACKING' and target_object:
-        # Transform bbox coordinates to ROI space
-        x, y, w, h = target_object['bbox']
-        # Adjust coordinates relative to ROI
-        x_roi = int((x - roi_x) * frame_width / roi_w)
-        y_roi = int((y - roi_y) * frame_height / roi_h)
-        w_roi = int(w * frame_width / roi_w)
-        h_roi = int(h * frame_height / roi_h)
-
-        # Color based on state
-        color = (0, 255, 0)  # Green for tracking
-        cv2.rectangle(display_frame, (x_roi, y_roi), (x_roi+w_roi, y_roi+h_roi), color, 2)
-
-    # Draw info text
-    cv2.putText(display_frame, f"State: {system_state['status']}", (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
-    cv2.putText(display_frame, f"Pan: {system_state['ptz']['pan']:.1f}", (10, 55),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
-    cv2.putText(display_frame, f"Tilt: {system_state['ptz']['tilt']:.1f}", (10, 80),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
-    cv2.putText(display_frame, f"Zoom: {system_state['ptz']['zoom']:.2f}x", (10, 105),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
-
-    # STEP 11: Create Debug Mosaic (if enabled)
-    if show_debug_mosaic:
-        # Prepare frames for mosaic (resize to quarter size)
-        mosaic_h, mosaic_w = frame_height // 4, frame_width // 4
-
-        # Original with detections
-        orig_display = original_frame.copy()
-        if target_object:
-            x, y, w, h = target_object['bbox']
-            cv2.rectangle(orig_display, (x, y), (x+w, y+h), (0, 255, 0), 2)
-        f1 = cv2.resize(orig_display, (mosaic_w, mosaic_h))
-        cv2.putText(f1, "1. Original", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
-
-        # Convert masks to color for display
-        f2 = cv2.resize(cv2.cvtColor(mask_stages['raw'], cv2.COLOR_GRAY2BGR), (mosaic_w, mosaic_h))
-        cv2.putText(f2, "2. FG Mask (Raw)", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
-
-        f3 = cv2.resize(cv2.cvtColor(mask_stages['erosion'], cv2.COLOR_GRAY2BGR), (mosaic_w, mosaic_h))
-        cv2.putText(f3, "3. After Erosion", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
-
-        f4 = cv2.resize(cv2.cvtColor(mask_stages['dilation'], cv2.COLOR_GRAY2BGR), (mosaic_w, mosaic_h))
-        cv2.putText(f4, "4. After Dilation", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
-
-        f5 = cv2.resize(cv2.cvtColor(mask_stages['blur'], cv2.COLOR_GRAY2BGR), (mosaic_w, mosaic_h))
-        cv2.putText(f5, "5. After Blur", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
-
-        f6 = cv2.resize(cv2.cvtColor(mask_stages['closing'], cv2.COLOR_GRAY2BGR), (mosaic_w, mosaic_h))
-        cv2.putText(f6, "6. After Closing", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
-
-        f7 = cv2.resize(cv2.cvtColor(mask_stages['final'], cv2.COLOR_GRAY2BGR), (mosaic_w, mosaic_h))
-        cv2.putText(f7, "7. Final Mask", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
-
-        f8 = cv2.resize(display_frame, (mosaic_w, mosaic_h))
-        cv2.putText(f8, "8. PTZ Output", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
-
-        # Create mosaic (2 rows x 4 columns)
-        row1 = np.hstack([f1, f2, f3, f4])
-        row2 = np.hstack([f5, f6, f7, f8])
-        mosaic = np.vstack([row1, row2])
-
-        cv2.imshow('Debug Pipeline Mosaic', mosaic)
-
-        if save_debug_mosaic:
-            debug_out.write(mosaic)
-
-    # STEP 12: Display and Save Main Output
-    cv2.imshow('PTZ Tracking', display_frame)
-
-    if save_output:
-        out.write(display_frame)
-
-    # STEP 13: Handle User Input
-    key = cv2.waitKey(1) & 0xFF
-    if key == ord('q') or key == 27:  # Q or ESC
-        break
-    elif key == ord(' '):
-        cv2.waitKey(0)  # Pause
-    elif key == ord('r'):
-        # Release lock and return to detection mode
-        if system_state['mode'] in ['LOCKED_MODE', 'LOST']:
-            system_state['mode'] = 'DETECTION_MODE'
-            system_state['csrt_tracker'] = None
-            system_state['selected_object_id'] = None
-            system_state['locked_bbox'] = None
-            print("[TRACKING] Manually released lock")
-        # Reset PTZ
-        ptz_state = {'pan': 0.0, 'tilt': 0.0, 'zoom': 1.0}
-    elif ord('0') <= key <= ord('9'):
-        # Select tracked object by ID (0-9)
-        if system_state['mode'] == 'DETECTION_MODE':
-            typed_id = key - ord('0')  # Convert to integer ID
-
-            # Find tracked object with this ID
-            selected_obj = None
-            for tracked_obj in tracked_objects:
-                if tracked_obj.id == typed_id:
-                    selected_obj = tracked_obj
-                    break
-
-            if selected_obj and selected_obj.last_detection is not None:
-                # Get bbox from selected object
-                bbox = selected_obj.last_detection.data.get('bbox')
-                if bbox:
-                    # Initialize CSRT tracker
-                    csrt_tracker = cv2.TrackerCSRT_create()
-                    success = csrt_tracker.init(original_frame, bbox)
-
-                    if success:
-                        # Transition to LOCKED_MODE
-                        system_state['mode'] = 'LOCKED_MODE'
-                        system_state['csrt_tracker'] = csrt_tracker
-                        system_state['selected_object_id'] = typed_id
-                        system_state['locked_bbox'] = bbox
-                        system_state['frames_since_lock'] = 0
-                        system_state['frames_lost'] = 0
-
-                        x, y, w, h = bbox
-                        system_state['last_known_position'] = (x + w/2, y + h/2)
-                        system_state['last_known_size'] = (w, h)
-
-                        print(f"[TRACKING] Locked onto object ID {typed_id}")
-                    else:
-                        print(f"[TRACKING] Failed to initialize CSRT for ID {typed_id}")
-                else:
-                    print(f"[TRACKING] No bbox data for ID {typed_id}")
-            else:
-                print(f"[TRACKING] Object ID {typed_id} not found")
-    elif key == ord('d'):
-        # Toggle debug mosaic
-        show_debug_mosaic = not show_debug_mosaic
-    elif key == ord('b'):
-        # Reset background model (if using OpenCV)
-        # bg_subtractor = cv2.createBackgroundSubtractorMOG2(...)
-        pass
-```
-
-#### 20.1.3 Cleanup Phase
-
-```
-# Release resources
-cap.release()
-if save_output:
-    out.release()
-cv2.destroyAllWindows()
-
-# Save telemetry/logs
-# Export statistics
-```
-
-### 20.2 BGSLibrary-Specific Implementation Notes
-
-When using bgslibrary instead of OpenCV's built-in subtractors:
-
-**Differences:**
-
-1. **Import**: `import pybgs`
-2. **Initialization**: `bg_subtractor = pybgs.AlgorithmName()`
-3. **Application**: `fg_mask = bg_subtractor.apply(frame)` (no learningRate parameter)
-4. **Output**: Returns binary mask directly (0 and 255)
-
-**Recommended Algorithms by Use Case:**
-
-- **Default/Testing**: `pybgs.FrameDifference()`
-- **Good Balance**: `pybgs.ViBe()`
-- **Best Accuracy**: `pybgs.SuBSENSE()`
-- **Dynamic Scenes**: `pybgs.PAWCS()`
-- **Static Scenes**: `pybgs.MixtureOfGaussianV2()`
-
-**No Additional Configuration Required**: BGSLibrary algorithms use internal default parameters.
-
-### 20.3 Key Implementation Tips
-
-1. **Frame Copy**: Always copy original frame before processing for overlay rendering
-2. **ROI Bounds**: Always clamp ROI coordinates to prevent out-of-bounds errors
-3. **Division by Zero**: Check denominators before division (moments, areas)
-4. **Coordinate Transformation**: When zoomed, transform object coordinates to display space
-5. **Color Space**: OpenCV uses BGR by default, not RGB
-6. **Mask Type**: Ensure masks are 8-bit single-channel (CV_8UC1) for findContours
-7. **Wait Key**: Must call cv2.waitKey() for imshow() to work
-8. **Resource Cleanup**: Always release VideoCapture and VideoWriter
-
-### 20.4 Performance Optimization
-
-1. **Resize Input**: Process smaller frames for speed: `frame = cv2.resize(frame, (width//2, height//2))`
-2. **Skip Frames**: Process every Nth frame for near-real-time on slow hardware
-3. **Reduce Morphology**: Use smaller kernels and fewer iterations
-4. **Simplify Filtering**: Remove extent/solidity checks if not needed
-5. **Algorithm Choice**: Use faster algorithms (FrameDifference, MOG) over slower (SuBSENSE)
-6. **Disable Shadows**: Set detectShadows=False to skip shadow processing
-7. **Reduce History**: Lower history parameter (e.g., 100-200) for faster adaptation
-
----
-
 ## 21. DEVELOPMENT GUIDELINES
 
 ### 21.1 Programming Language
@@ -2906,7 +2264,7 @@ When using bgslibrary instead of OpenCV's built-in subtractors:
 
 Visit: <https://pixi.sh> or install via:
 
-```bash
+'''bash
 # Linux/macOS
 curl -fsSL https://pixi.sh/install.sh | bash
 
@@ -2915,7 +2273,7 @@ iwr -useb https://pixi.sh/install.ps1 | iex
 
 # Verify installation
 pixi --version
-```
+'''
 
 #### 21.2.3 Project Dependencies
 
@@ -2932,9 +2290,6 @@ pixi --version
 
 **Optional Libraries:**
 
-- **pybgs**: BGSLibrary Python bindings (from PyPI)
-  - Installation: Via pip in Pixi environment
-  - Use when: Need advanced background subtraction algorithms (43+ algorithms)
 - **pyyaml**: YAML configuration support
   - Alternative: Use JSON (built-in)
 - **matplotlib**: Visualization and plotting
@@ -2964,9 +2319,6 @@ license = {text = "MIT"}
 [tool.pixi.project]
 channels = ["conda-forge"]
 platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
-
-[tool.pixi.pypi-dependencies]
-pybgs = "*"  # BGSLibrary - only available on PyPI
 
 [tool.pixi.dependencies]
 python = ">=3.8,<3.12"
@@ -3021,9 +2373,6 @@ python = ">=3.8,<3.12"
 opencv = ">=4.5"
 numpy = ">=1.19"
 
-[pypi-dependencies]
-pybgs = "*"
-
 [tasks]
 track = "python main.py"
 ```
@@ -3032,7 +2381,7 @@ track = "python main.py"
 
 **Initial Setup:**
 
-```bash
+'''bash
 # Navigate to project directory
 cd PTZ_tracker_dumb
 
@@ -3047,11 +2396,11 @@ pixi install --environment viz
 
 # Install development environment
 pixi install --environment dev
-```
+'''
 
 **Running the Application:**
 
-```bash
+'''bash
 # Run main tracking application
 pixi run track
 
@@ -3063,11 +2412,11 @@ pixi run python main.py
 
 # Run with arguments
 pixi run python main.py --input video.mp4 --output result.mp4
-```
+'''
 
 **Development Workflow:**
 
-```bash
+'''bash
 # Enter Pixi shell (activates environment)
 pixi shell
 
@@ -3078,11 +2427,11 @@ pytest tests/
 
 # Exit shell
 exit
-```
+'''
 
 **Managing Dependencies:**
 
-```bash
+'''bash
 # Add a new dependency
 pixi add scipy
 
@@ -3097,7 +2446,7 @@ pixi update
 
 # Show installed packages
 pixi list
-```
+'''
 
 #### 21.2.7 Environment Isolation
 
@@ -3112,7 +2461,7 @@ Pixi automatically handles environment isolation:
 
 Pixi ensures the project works across platforms:
 
-```bash
+'''bash
 # On Linux
 pixi run track
 
@@ -3121,13 +2470,13 @@ pixi run track
 
 # On Windows
 pixi run track
-```
+'''
 
 Same commands, same results!
 
 #### 21.2.9 Quick Start Commands
 
-```bash
+'''bash
 # Clone and setup
 git clone <repository-url>
 cd PTZ_tracker_dumb
@@ -3145,24 +2494,24 @@ python main.py  # Run inside Pixi shell
 
 # Run tests
 pixi run test
-```
+'''
 
 #### 21.2.10 Legacy pip Installation (Alternative)
 
 If Pixi is not available, fall back to traditional pip:
 
-```bash
+'''bash
 # Create virtual environment
 python -m venv venv
 source venv/bin/activate  # Linux/macOS
 # or: venv\Scripts\activate  # Windows
 
 # Install dependencies
-pip install opencv-python numpy pybgs pyyaml
+pip install opencv-python numpy pyyaml
 
 # Run application
 python main.py
-```
+'''
 
 ### 21.3 Project Structure
 
@@ -3179,7 +2528,7 @@ PTZ_tracker_dumb/
 ├── src/                           # Source code directory
 │   ├── __init__.py
 │   ├── video_io.py               # Video input/output handling
-│   ├── background_subtraction.py # Background subtraction (OpenCV/bgslibrary)
+│   ├── background_subtraction.py # Background subtraction (OpenCV)
 │   ├── object_detection.py       # Object detection and filtering
 │   ├── tracking.py               # Tracking logic and state management
 │   ├── ptz_control.py            # Virtual PTZ calculations
@@ -3213,9 +2562,8 @@ PTZ_tracker_dumb/
 2. **background_subtraction.py**: Background subtraction algorithms
 
    - OpenCV subtractor wrapper (MOG2, KNN, etc.)
-   - BGSLibrary wrapper (SuBSENSE, PAWCS, etc.)
    - Mask post-processing pipeline
-   - Unified interface for both libraries
+   - Unified interface for OpenCV algorithms
 
 3. **object_detection.py**: Object detection and filtering
 

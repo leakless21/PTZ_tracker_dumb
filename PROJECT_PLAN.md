@@ -60,14 +60,7 @@ This document outlines the complete implementation plan for a real-time PTZ came
 
 ### Phase 3: Background Subtraction Engine
 
-#### BGSLibrary Integration
-- Create abstract background subtractor interface
-- Implement BGSLibrary algorithm factory with support for 43+ algorithms
-- Add algorithm-specific initialization for PAWCS, SuBSENSE, ViBe, SigmaDelta, LOBSTER
-- Create background model persistence mechanism
-- Implement algorithm switching at runtime
-
-#### OpenCV Fallback Implementation
+#### OpenCV Background Subtraction Implementation
 - Implement OpenCV MOG2 background subtractor
 - Add KNN-based background subtraction option
 - Create parameter configuration for OpenCV algorithms
@@ -403,7 +396,6 @@ PTZ_tracker_dumb/
 │   ├── background_subtraction/      # Background subtraction module
 │   │   ├── __init__.py
 │   │   ├── base.py                  # Abstract base class for subtractors
-│   │   ├── bgs_library.py           # BGSLibrary implementation
 │   │   ├── opencv_subtractor.py     # OpenCV algorithms implementation
 │   │   ├── factory.py               # Algorithm factory pattern
 │   │   └── postprocessing.py        # Mask morphological operations
@@ -630,13 +622,12 @@ PTZ_tracker_dumb/
 
 **Responsibilities**:
 - Provide unified interface for multiple BGS algorithms
-- Support BGSLibrary and OpenCV implementations
+- Support OpenCV implementations
 - Manage background model updates
 - Apply mask post-processing pipeline
 
 **Key Classes**:
 - BackgroundSubtractor (abstract base class)
-- BGSLibrarySubtractor (BGSLibrary implementation)
 - OpenCVSubtractor (OpenCV implementation)
 - SubtractorFactory (algorithm selection)
 - MaskPostprocessor (morphological operations)
@@ -654,7 +645,6 @@ PTZ_tracker_dumb/
 - Binary foreground mask (uint8 with 0/255 values)
 
 **Dependencies**:
-- pybgs (BGSLibrary)
 - OpenCV
 - NumPy
 
@@ -1063,7 +1053,6 @@ Module Events → Telemetry Collector → In-Memory Buffer → Periodic CSV Writ
 **Secondary: pip**
 - Provide requirements.txt
 - Support virtual environments
-- Document manual compilation for BGSLibrary if needed
 
 ### Configuration Management
 
@@ -1130,9 +1119,6 @@ Module Events → Telemetry Collector → In-Memory Buffer → Periodic CSV Writ
 ## Risk Assessment & Mitigation
 
 ### Technical Risks
-
-**Risk: BGSLibrary installation complexity**
-- Mitigation: Provide clear installation guide, fallback to OpenCV
 
 **Risk: CSRT tracking failures in challenging conditions**
 - Mitigation: Implement robust recovery mechanism, tunable timeout

@@ -61,18 +61,16 @@ tracking:
     min_bbox_area: 100  # Minimum bbox area (pixels)
     max_bbox_area_fraction: 0.8  # Maximum bbox area (fraction of frame)
 
-  # Object Selection
+  # Object Selection (Manual Only)
   selection:
-    method: "largest"  # Options: largest, center, manual, auto
-    auto_select_threshold: 30  # Frames before auto-selecting (if auto enabled)
+    method: "manual"  # Only manual selection supported (press number key 0-9)
     min_track_age: 5  # Minimum frames tracked before selectable
 
-  # Mode Transition
-  transition:
-    enable_auto_lock: false  # Automatically lock onto largest object
-    enable_manual_selection: true  # Allow mouse click selection
-    recovery_search_radius: 150  # Pixels to search for lost object
-    size_similarity_threshold: 0.5  # 0.0-1.0 for object matching
+  # Recovery Settings
+  recovery:
+    enable_recovery: true  # Attempt to reacquire lost objects
+    search_radius: 150  # Pixels to search for lost object
+    size_similarity_threshold: 0.5  # 0.0-1.0 for object matching during recovery
 
   # PTZ Deadband
   deadband_x: 0.05  # Horizontal deadband (fraction of frame width)

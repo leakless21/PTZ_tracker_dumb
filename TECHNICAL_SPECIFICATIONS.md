@@ -3,9 +3,11 @@
 ## 1. PROJECT OVERVIEW
 
 ### 1.1 Purpose
+
 A real-time object tracking system that uses background subtraction for object detection and simulated PTZ (Pan-Tilt-Zoom) camera control to keep detected objects centered in the video frame.
 
 ### 1.2 Scope
+
 - Process pre-recorded video files with simulated PTZ control
 - Detect moving objects using background subtraction
 - Track detected objects and adjust virtual camera position
@@ -13,6 +15,7 @@ A real-time object tracking system that uses background subtraction for object d
 - Provide real-time visualization of tracking performance
 
 ### 1.3 Key Constraints
+
 - Use background subtraction (not deep learning) for object detection
 - Simulate PTZ control on existing video (no physical camera)
 - Real-time or near real-time processing capability
@@ -23,7 +26,9 @@ A real-time object tracking system that uses background subtraction for object d
 ## 2. SYSTEM ARCHITECTURE
 
 ### 2.1 High-Level Architecture
+
 The system follows a pipeline architecture with the following stages:
+
 1. Video Input Stage
 2. Frame Preprocessing Stage
 3. Background Subtraction Stage
@@ -34,6 +39,7 @@ The system follows a pipeline architecture with the following stages:
 8. Display & Recording Stage
 
 ### 2.2 Component Diagram
+
 ```
 [Video Source]
     ↓
@@ -57,6 +63,7 @@ The system follows a pipeline architecture with the following stages:
 ```
 
 ### 2.3 Data Flow
+
 - Unidirectional flow from video input to display output
 - State feedback loop between Tracking Controller and PTZ State Manager
 - Background model continuously updated by Background Model Manager
@@ -66,6 +73,7 @@ The system follows a pipeline architecture with the following stages:
 ## 3. SYSTEM STATE MANAGEMENT
 
 ### 3.1 Overview
+
 The application operates as a finite state machine with system-wide states that govern the behavior of all modules. The state determines which tracking algorithm is active, what visual feedback is shown, and how user input is processed.
 
 ### 3.2 System States
@@ -73,9 +81,11 @@ The application operates as a finite state machine with system-wide states that 
 The system has **four primary states**:
 
 #### 3.2.1 DETECTION_MODE
+
 **Purpose**: Multi-object detection and tracking without locking onto a specific object
 
 **Active Modules**:
+
 - Background Subtraction: Active
 - Object Detection: Active (contour-based)
 - Norfair Tracker: Active (tracking all detected objects)
@@ -83,18 +93,22 @@ The system has **four primary states**:
 - PTZ Control: Follows largest detected object (for centering)
 
 **Visual Indicators**:
+
 - All tracked objects: Cyan bounding boxes
 - Track IDs: Displayed above each object
 - Status text: "DETECTION MODE"
 
 **Transitions From This State**:
+
 - User presses number key (0-9) → **LOCKED_MODE** (manual selection)
 - User presses 'R' key → Stays in **DETECTION_MODE** (reset PTZ)
 
 #### 3.2.2 LOCKED_MODE
+
 **Purpose**: High-accuracy tracking of a single user-selected object
 
 **Active Modules**:
+
 - Background Subtraction: Inactive (not needed for CSRT)
 - Object Detection: Inactive
 - Norfair Tracker: Inactive
@@ -102,18 +116,22 @@ The system has **four primary states**:
 - PTZ Control: Follows locked object
 
 **Visual Indicators**:
+
 - Locked object: Green bounding box (thick, 3px)
 - Status text: "LOCKED" with object ID
 - Lock duration: Frame count since lock
 
 **Transitions From This State**:
+
 - CSRT loses tracking → **LOST**
 - User presses 'R' key → **DETECTION_MODE** (manual release)
 
 #### 3.2.3 LOST
+
 **Purpose**: Temporary state when CSRT tracker loses the locked object
 
 **Active Modules**:
+
 - Background Subtraction: Active (for recovery)
 - Object Detection: Active (for recovery)
 - Norfair Tracker: Inactive
@@ -121,31 +139,38 @@ The system has **four primary states**:
 - PTZ Control: Holds last position
 
 **Visual Indicators**:
+
 - Search area: Red circle around last known position
 - Status text: "SEARCHING..."
 - Timer: Seconds remaining for recovery
 
 **Recovery Logic**:
+
 - Search for object near last known position using background subtraction
 - Match candidates by size and distance
 - If match found → Reinitialize CSRT → **LOCKED_MODE**
 - If timeout exceeded → **DETECTION_MODE**
 
 **Transitions From This State**:
+
 - Object reacquired → **LOCKED_MODE** (automatic)
 - Recovery timeout (3 seconds) → **DETECTION_MODE** (automatic)
 - User presses 'R' key → **DETECTION_MODE** (manual abort)
 
 #### 3.2.4 IDLE (Optional State)
+
 **Purpose**: Application started but no video loaded or processing paused
 
 **Active Modules**:
+
 - All tracking modules: Inactive
 
 **Visual Indicators**:
+
 - Status text: "IDLE" or "PAUSED"
 
 **Transitions From This State**:
+
 - Video loaded/resumed → **DETECTION_MODE**
 
 ### 3.3 State Transition Diagram
@@ -218,6 +243,7 @@ system_state = {
 ### 3.5 State Transition Functions
 
 #### 3.5.1 Initialize System
+
 ```python
 def initialize_system():
     """Initialize system in DETECTION_MODE"""
@@ -228,6 +254,7 @@ def initialize_system():
 ```
 
 #### 3.5.2 Transition to Locked Mode
+
 ```python
 def transition_to_locked_mode(selected_object, frame):
     """Transition from DETECTION_MODE to LOCKED_MODE"""
@@ -251,6 +278,7 @@ def transition_to_locked_mode(selected_object, frame):
 ```
 
 #### 3.5.3 Transition to Lost
+
 ```python
 def transition_to_lost():
     """Transition from LOCKED_MODE to LOST"""
@@ -261,6 +289,7 @@ def transition_to_lost():
 ```
 
 #### 3.5.4 Transition to Detection Mode
+
 ```python
 def transition_to_detection_mode():
     """Transition from any state to DETECTION_MODE"""
@@ -303,20 +332,23 @@ elif system_state['mode'] == 'LOST':
 
 ### 3.7 User Input Handling by State
 
-#### In DETECTION_MODE:
+#### In DETECTION_MODE
+
 - `0-9`: Lock onto object with that ID
 - `R`: Reset PTZ to center
 - `D`: Toggle debug mosaic
 - `Space`: Pause
 - `Q/ESC`: Quit
 
-#### In LOCKED_MODE:
+#### In LOCKED_MODE
+
 - `R`: Release lock, return to DETECTION_MODE
 - `D`: Toggle debug mosaic
 - `Space`: Pause
 - `Q/ESC`: Quit
 
-#### In LOST:
+#### In LOST
+
 - `R`: Abort recovery, return to DETECTION_MODE
 - `Q/ESC`: Quit
 
@@ -324,17 +356,17 @@ elif system_state['mode'] == 'LOST':
 
 ```yaml
 system:
-  initial_state: "detection"  # Start in DETECTION_MODE
+  initial_state: "detection" # Start in DETECTION_MODE
 
   state_transitions:
-    enable_manual_lock: true     # Allow user to lock by pressing ID
-    recovery_timeout: 3.0        # Seconds before LOST→DETECTION_MODE
-    lost_frames_threshold: 15    # Frames of CSRT failure before LOST
+    enable_manual_lock: true # Allow user to lock by pressing ID
+    recovery_timeout: 3.0 # Seconds before LOST→DETECTION_MODE
+    lost_frames_threshold: 15 # Frames of CSRT failure before LOST
 
   recovery:
-    enable_recovery: true        # Attempt to reacquire lost objects
-    search_radius: 150           # Pixels around last known position
-    size_similarity_threshold: 0.5  # Minimum size ratio for match
+    enable_recovery: true # Attempt to reacquire lost objects
+    search_radius: 150 # Pixels around last known position
+    size_similarity_threshold: 0.5 # Minimum size ratio for match
 ```
 
 ---
@@ -342,23 +374,27 @@ system:
 ## 4. COORDINATE SYSTEMS
 
 ### 4.1 Frame Coordinate System
+
 - Origin: Top-left corner of the original video frame
 - X-axis: Horizontal, increasing right (0 to frame_width)
 - Y-axis: Vertical, increasing downward (0 to frame_height)
 - Units: Pixels
 
 ### 4.2 Virtual PTZ Coordinate System
+
 - Pan: Horizontal rotation in degrees (-180° to +180°, 0° = center)
 - Tilt: Vertical rotation in degrees (-90° to +90°, 0° = center)
 - Zoom: Magnification factor (1.0 = no zoom, >1.0 = zoomed in)
 
 ### 4.3 Normalized Coordinate System
+
 - Used for tracking calculations
 - Range: (0.0, 0.0) to (1.0, 1.0)
 - Independent of actual frame resolution
 - Center point: (0.5, 0.5)
 
 ### 4.4 Region of Interest (ROI) Coordinate System
+
 - Defines the current virtual camera viewport
 - Expressed as rectangle in frame coordinates
 - Calculated from pan, tilt, and zoom parameters
@@ -370,186 +406,30 @@ system:
 
 ### 5.1 Library Selection
 
-#### 5.1.1 BGSLibrary (Primary - Recommended)
-**Installation**: `pip install pybgs` or `pixi add --pypi pybgs`
-
-BGSLibrary provides 43+ advanced background subtraction algorithms optimized for various scenarios:
-
-**Recommended Algorithms:**
-- **SuBSENSE**: Self-Balanced Sensitivity Segmenter (state-of-the-art accuracy)
-- **PAWCS**: Pixel-based Adaptive Word Consensus Segmenter (excellent for dynamic backgrounds)
-- **ViBe**: Visual Background Extractor (good balance of speed and accuracy)
-- **SigmaDelta**: Sigma-delta filter based (good for camouflage and gradual changes)
-- **LOBSTER**: LOcal Binary SimiLarity segmenTER (robust to illumination changes)
-
-**Additional Algorithms:**
-- **FrameDifference**: Simple frame differencing baseline (fastest, for testing)
-- **StaticFrameDifference**: For static camera scenarios
-- **AdaptiveBackgroundLearning**: Adaptive learning rate
-- **CodeBook**: Codebook-based algorithm
-- **KDE**: Kernel Density Estimation
-- **MixtureOfGaussianV2**: Enhanced MOG2 variant
-- **LBSP**: Local Binary Similarity Pattern
-- **MultiLayer**: Multi-layer background subtraction
-- **T2FGMM_UM**: Type-2 Fuzzy Gaussian Mixture Model
-- **T2FGMM_UV**: Type-2 Fuzzy with UV adaptation
-- **WeightedMovingMean**: Simple moving average
-- **WeightedMovingVariance**: Variance-based detection
-
-#### 5.1.2 OpenCV Built-in Algorithms (Optional/Legacy)
 OpenCV provides basic background subtraction classes:
+
 - **cv2.createBackgroundSubtractorMOG2()**: Gaussian Mixture Model
 - **cv2.createBackgroundSubtractorKNN()**: K-Nearest Neighbors based
 - **cv2.bgsegm.createBackgroundSubtractorMOG()**: Original MOG (legacy)
 - **cv2.bgsegm.createBackgroundSubtractorGMG()**: Geometric multigrid
 - **cv2.bgsegm.createBackgroundSubtractorCNT()**: Counting-based
 
-**Note**: OpenCV algorithms are maintained for compatibility, but BGSLibrary is recommended for better performance and more algorithm choices.
-
 ### 5.2 Algorithm Selection Strategy
-- **Default**: BGSLibrary's **PAWCS** (best balance of speed and accuracy)
-- **High Accuracy**: **SuBSENSE** or **LOBSTER**
-- **High Speed**: **FrameDifference** or **ViBe**
-- **Outdoor/Dynamic Lighting**: **PAWCS** or **SigmaDelta**
-- **Indoor/Static Lighting**: **ViBe** or **CodeBook**
-- **Minimal Resources**: **FrameDifference** or **StaticFrameDifference**
-- **Complex Scenes**: **SuBSENSE** or **MultiLayer**
 
-### 5.3 BGSLibrary Implementation Details
+- **Default**: **MOG2** (best balance of speed and accuracy)
+- **High Accuracy**: **KNN**
+- **High Speed**: **MOG**
+- **Outdoor/Dynamic Lighting**: **MOG2**
+- **Indoor/Static Lighting**: **KNN**
+- **Minimal Resources**: **MOG**
+- **Complex Scenes**: **GMG**
 
-#### 5.3.1 Installation and Import
-**Installation**:
-```bash
-# Using pip
-pip install pybgs
+### 5.3 Implementation Details
 
-# Using Pixi (recommended)
-pixi add --pypi pybgs
-```
+#### 5.3.1 OpenCV MOG2
 
-**Import**:
-```python
-import pybgs
-```
-
-#### 5.3.2 Initialization
-General pattern: `algorithm = pybgs.AlgorithmName()`
-
-**Examples**:
-```python
-# Recommended: PAWCS (default)
-bgs = pybgs.PAWCS()
-
-# High accuracy: SuBSENSE
-bgs = pybgs.SuBSENSE()
-
-# Balanced: ViBe
-bgs = pybgs.ViBe()
-
-# Fast: FrameDifference
-bgs = pybgs.FrameDifference()
-
-# Dynamic lighting: SigmaDelta
-bgs = pybgs.SigmaDelta()
-
-# Robust: LOBSTER
-bgs = pybgs.LOBSTER()
-```
-
-#### 5.3.3 Application Method
-**Function**: `foreground_mask = algorithm.apply(frame)`
-
-**Parameters**:
-- **Input**: Frame as NumPy array (BGR format, same as cv2.imread)
-- **Output**: Binary foreground mask (uint8)
-  - 0 (black): Background
-  - 255 (white): Foreground
-
-**Example**:
-```python
-# Initialize algorithm
-bgs = pybgs.PAWCS()
-
-# Apply to frame
-fg_mask = bgs.apply(frame)
-
-# fg_mask is now a binary mask ready for contour detection
-```
-
-**Important Notes**:
-- BGSLibrary algorithms do NOT have a learningRate parameter (unlike OpenCV)
-- Learning rate is handled internally by each algorithm
-- No need to specify history or variance thresholds
-- Algorithms are pre-configured with optimal parameters
-
-#### 5.3.4 Complete Algorithm List
-
-**Simple/Fast Algorithms:**
-- `pybgs.FrameDifference()` - Simple frame differencing (fastest)
-- `pybgs.StaticFrameDifference()` - For static camera
-- `pybgs.WeightedMovingMean()` - Moving average
-- `pybgs.WeightedMovingVariance()` - Variance-based
-
-**Statistical Algorithms:**
-- `pybgs.AdaptiveBackgroundLearning()` - Adaptive learning
-- `pybgs.AdaptiveSelectiveBackgroundLearning()` - Selective adaptation
-- `pybgs.MixtureOfGaussianV1()` - Original MOG
-- `pybgs.MixtureOfGaussianV2()` - Enhanced MOG2
-- `pybgs.KNN()` - K-Nearest Neighbors
-
-**Advanced/Robust Algorithms:**
-- `pybgs.CodeBook()` - Codebook algorithm
-- `pybgs.ViBe()` - Visual Background Extractor (recommended)
-- `pybgs.PAWCS()` - Pixel Adaptive Word Consensus (recommended, default)
-- `pybgs.SuBSENSE()` - Self-Balanced Sensitivity (highest accuracy)
-- `pybgs.LOBSTER()` - Local Binary Similarity
-- `pybgs.SigmaDelta()` - Sigma-delta filter
-- `pybgs.T2FGMM_UM()` - Type-2 Fuzzy GMM
-- `pybgs.T2FGMM_UV()` - Type-2 Fuzzy with UV
-
-**Special Purpose:**
-- `pybgs.MultiLayer()` - Multi-layer scenes
-- `pybgs.KDE()` - Kernel Density Estimation
-- `pybgs.LBP_MRF()` - LBP with Markov Random Field
-- `pybgs.FuzzySugenoIntegral()` - Fuzzy integration
-- `pybgs.FuzzyChoquetIntegral()` - Fuzzy integration
-
-#### 5.3.5 Algorithm Characteristics
-
-**PAWCS (Default Recommended)**:
-- Excellent performance in dynamic scenes
-- Handles illumination changes well
-- Good speed/accuracy balance
-- Pixel-based adaptive processing
-
-**SuBSENSE (Highest Accuracy)**:
-- State-of-the-art accuracy
-- Self-balanced sensitivity
-- Good for challenging scenarios
-- Slower than PAWCS but more accurate
-
-**ViBe (Balanced)**:
-- Fast initialization (single frame)
-- Good accuracy for most scenarios
-- Low computational cost
-- Random sampling approach
-
-**SigmaDelta (Illumination Robust)**:
-- Excellent for gradual lighting changes
-- Good for outdoor scenes
-- Handles shadows well
-- Stable over long periods
-
-**FrameDifference (Testing/Baseline)**:
-- Fastest algorithm
-- Minimal memory usage
-- Good for rapid testing
-- Not suitable for static objects
-
-### 5.4 OpenCV Implementation Details (Optional/Legacy)
-
-#### 5.4.1 OpenCV MOG2 (If using OpenCV instead)
 **Initialization**:
+
 ```python
 bg_subtractor = cv2.createBackgroundSubtractorMOG2(
     history=500,
@@ -559,11 +439,13 @@ bg_subtractor = cv2.createBackgroundSubtractorMOG2(
 ```
 
 **Application**:
+
 ```python
 fg_mask = bg_subtractor.apply(frame, learningRate=-1)
 ```
 
 **Parameters**:
+
 - **history**: Number of last frames affecting background model (default: 500)
 - **varThreshold**: Threshold on squared Mahalanobis distance (default: 16)
 - **detectShadows**: Enable/disable shadow detection (default: True)
@@ -571,8 +453,10 @@ fg_mask = bg_subtractor.apply(frame, learningRate=-1)
   - Range: -1 (automatic), 0.0 (no learning) to 1.0 (complete replacement)
   - Recommended: 0.001 to 0.01 for slow learning, 0.05 to 0.1 for fast adaptation
 
-#### 5.4.2 OpenCV KNN (If using OpenCV instead)
+#### 5.3.2 OpenCV KNN
+
 **Initialization**:
+
 ```python
 bg_subtractor = cv2.createBackgroundSubtractorKNN(
     history=500,
@@ -582,15 +466,18 @@ bg_subtractor = cv2.createBackgroundSubtractorKNN(
 ```
 
 **Application**:
+
 ```python
 fg_mask = bg_subtractor.apply(frame, learningRate=-1)
 ```
 
 **KNN vs MOG2**:
+
 - KNN: Better for scenes with rapid changes, less memory
 - MOG2: Better shadow detection, more stable in static scenes
 
 ### 5.5 Background Model Management
+
 - **Initialization Phase**: First N frames used to build initial model (N = 30-120)
 - **Update Strategy**: Continuous online update or periodic reset
 - **Learning Rate Adaptation**:
@@ -620,59 +507,71 @@ Sequence:
 **Detailed Steps:**
 
 1. **Create Kernel**
+
    ```
    kernel = np.ones((5, 5), np.uint8)
    # Creates a 5×5 rectangular kernel of ones
    ```
 
 2. **Erosion** (Remove small noise pixels)
+
    ```
    Function: cv2.erode(mask, kernel, iterations)
    fgMask = cv2.erode(fgMask, kernel, iterations=1)
    ```
+
    - Removes small white noise
    - Shrinks foreground objects slightly
 
 3. **Dilation** (Restore object size)
+
    ```
    Function: cv2.dilate(mask, kernel, iterations)
    fgMask = cv2.dilate(fgMask, kernel, iterations=1)
    ```
+
    - Restores object size after erosion
    - Connects nearby components
    - Together with erosion forms an "opening" operation
 
 4. **Gaussian Blur** (Smooth and reduce noise)
+
    ```
    Function: cv2.GaussianBlur(mask, ksize, sigmaX)
    fgMask = cv2.GaussianBlur(fgMask, (3, 3), 0)
    ```
+
    - **ksize**: Kernel size (3, 3) - must be odd
    - **sigmaX**: Standard deviation (0 = auto-calculate from kernel size)
    - **Purpose**: Smooths edges, reduces high-frequency noise
    - **Effect**: Softens mask before final operations
 
 5. **Morphological Closing** (Fill holes)
+
    ```
    Function: cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
    fgMask = cv2.morphologyEx(fgMask, cv2.MORPH_CLOSE, kernel)
    ```
+
    - Fills small holes inside objects
    - Connects broken parts of objects
    - Dilation followed by erosion
 
 6. **Binary Threshold** (Final cleanup)
+
    ```
    Function: cv2.threshold(mask, threshold, maxval, type)
    _, fgMask = cv2.threshold(fgMask, 130, 255, cv2.THRESH_BINARY)
    ```
+
    - **threshold**: 130 (higher than default 127)
    - **maxval**: 255 (white)
    - **type**: cv2.THRESH_BINARY
    - **Purpose**: Convert to pure binary after blur
-   - **Returns**: (threshold_value, binary_mask) - use _ to discard first value
+   - **Returns**: (threshold*value, binary_mask) - use * to discard first value
 
 **Complete Function Chain:**
+
 ```
 kernel = np.ones((5, 5), np.uint8)
 fgMask = cv2.erode(fgMask, kernel, iterations=1)
@@ -683,20 +582,24 @@ _, fgMask = cv2.threshold(fgMask, 130, 255, cv2.THRESH_BINARY)
 ```
 
 **Kernel Size Configuration:**
+
 - **Small kernel** (3×3): For fine details and small objects
 - **Default kernel** (5×5): Good general-purpose size (recommended)
 - **Large kernel** (7×7 or 9×9): For aggressive filtering, merge nearby objects
 
 **Gaussian Blur Kernel:**
+
 - Use small odd values: (3, 3) or (5, 5)
 - Larger values create more smoothing
 
 **Threshold Value:**
+
 - Default: 130 (stricter than standard 127)
 - Lower values (100-127): More permissive, more foreground pixels
 - Higher values (130-150): Stricter, fewer false positives
 
 **Advantages of this pipeline:**
+
 - Gaussian blur adds noise reduction beyond morphological operations
 - Sequence is optimized: removes noise first, then smooths, then finalizes
 - Threshold value of 130 is stricter, reducing false positives
@@ -710,7 +613,9 @@ _, fgMask = cv2.threshold(fgMask, 130, 255, cv2.THRESH_BINARY)
 ### 6.1 Contour Detection (OpenCV)
 
 #### 6.1.1 Find Contours
+
 Function: `cv2.findContours(binary_mask, mode, method)`
+
 - **binary_mask**: Binary foreground mask (8-bit single-channel)
 - **mode**: `cv2.RETR_EXTERNAL` (only external contours)
   - Alternative: `cv2.RETR_LIST` (all contours without hierarchy)
@@ -725,7 +630,9 @@ Function: `cv2.findContours(binary_mask, mode, method)`
 ### 6.2 Contour Filtering (OpenCV)
 
 #### 6.2.1 Area Filtering
+
 Function: `cv2.contourArea(contour)`
+
 - **Returns**: Area in square pixels
 - **Filtering Logic**:
   - Minimum area: `area >= min_area` (default: 500 pixels)
@@ -733,45 +640,60 @@ Function: `cv2.contourArea(contour)`
 - **Purpose**: Remove tiny noise and overly large regions
 
 #### 6.2.2 Aspect Ratio Filtering
+
 Steps:
+
 1. Get bounding box: `x, y, w, h = cv2.boundingRect(contour)`
 2. Calculate aspect ratio: `aspect_ratio = w / h`
 3. Filter: `min_ratio <= aspect_ratio <= max_ratio` (default: 0.2 to 5.0)
+
 - **Purpose**: Remove elongated objects (likely noise or shadows)
 
 #### 6.2.3 Solidity Filtering
+
 Steps:
+
 1. Get contour area: `area = cv2.contourArea(contour)`
 2. Get convex hull: `hull = cv2.convexHull(contour)`
 3. Get hull area: `hull_area = cv2.contourArea(hull)`
 4. Calculate solidity: `solidity = area / hull_area`
 5. Filter: `solidity >= min_solidity` (default: 0.3)
+
 - **Purpose**: Remove irregular shapes (likely fragmented detections)
 
 #### 6.2.4 Extent Filtering
+
 Steps:
+
 1. Get contour area: `area = cv2.contourArea(contour)`
 2. Get bounding rect: `x, y, w, h = cv2.boundingRect(contour)`
 3. Calculate extent: `extent = area / (w * h)`
 4. Filter: `extent >= min_extent` (default: 0.2)
+
 - **Purpose**: Remove sparse or scattered detections
 
 ### 6.3 Bounding Box Calculation (OpenCV)
 
 #### 6.3.1 Axis-Aligned Bounding Rectangle
+
 Function: `cv2.boundingRect(contour)`
+
 - **Returns**: (x, y, width, height)
 - **Coordinate**: (x, y) is top-left corner
 - **Usage**: Fast, simple, good for most cases
 
 #### 6.3.2 Minimum Area Rectangle (Rotated)
+
 Function: `cv2.minAreaRect(contour)`
+
 - **Returns**: ((center_x, center_y), (width, height), angle)
 - **Usage**: For rotated objects
 - **Box Points**: `cv2.boxPoints(rect)` to get 4 corner points
 
 #### 6.3.3 Bounding Box Padding
+
 Add padding to bounding box:
+
 - `x_padded = max(0, x - padding)`
 - `y_padded = max(0, y - padding)`
 - `w_padded = min(frame_width - x_padded, w + 2*padding)`
@@ -780,12 +702,15 @@ Add padding to bounding box:
 ### 6.4 Object Properties Extraction (OpenCV)
 
 #### 6.4.1 Centroid Calculation
+
 Method 1 (from bounding box):
+
 - `centroid_x = x + w / 2`
 - `centroid_y = y + h / 2`
 
 Method 2 (from contour moments):
 Function: `cv2.moments(contour)`
+
 - **Returns**: Dictionary of moment values
 - **Centroid calculation**:
   - `M = cv2.moments(contour)`
@@ -794,12 +719,15 @@ Function: `cv2.moments(contour)`
 - **Advantage**: More accurate, weighted by pixel distribution
 
 #### 6.4.2 Area and Perimeter
+
 - **Area**: `cv2.contourArea(contour)` - returns float
 - **Perimeter**: `cv2.arcLength(contour, closed=True)` - returns float
 - **closed**: True for closed contours
 
 #### 6.4.3 Complete Property Set
+
 For each detected object, extract:
+
 - **Centroid**: (cx, cy) - from moments or bounding box
 - **Area**: Square pixels - from contourArea()
 - **Perimeter**: Pixels - from arcLength()
@@ -810,7 +738,9 @@ For each detected object, extract:
 - **Convex Hull**: cv2.convexHull(contour) - for advanced processing
 
 ### 6.5 Object Selection Strategy
+
 When multiple objects detected, prioritize by:
+
 1. **Largest Area**: Select object with maximum area
 2. **Closest to Center**: Select object nearest to frame center
 3. **Previously Tracked**: Continue tracking same object (with association)
@@ -824,11 +754,13 @@ When multiple objects detected, prioritize by:
 ### 7.1 Overview
 
 The Tracking Controller implements the dual-mode tracking system described in **Section 3 (SYSTEM STATE MANAGEMENT)**. This module manages:
+
 - Norfair multi-object tracker (active in DETECTION_MODE and LOST states)
 - CSRT single-object tracker (active in LOCKED_MODE)
 - State transitions (see Section 3.3 for state diagram)
 
 **Key Responsibilities**:
+
 1. Maintain Norfair tracker for multi-object detection
 2. Initialize and update CSRT tracker for locked object
 3. Execute recovery logic when tracking is lost
@@ -837,9 +769,11 @@ The Tracking Controller implements the dual-mode tracking system described in **
 ### 7.2 Tracking Libraries
 
 #### 7.2.1 Norfair - Multi-Object Tracking
+
 **Purpose**: Track multiple detected objects when in detection mode
 
 **Installation**:
+
 ```bash
 pip install norfair
 # or with Pixi:
@@ -847,6 +781,7 @@ pixi add --pypi norfair
 ```
 
 **Key Features**:
+
 - Tracks multiple objects simultaneously
 - Uses detections from background subtraction
 - Handles object association across frames
@@ -854,28 +789,33 @@ pixi add --pypi norfair
 - Distance-based matching
 
 **Core Components**:
+
 - `Detection`: Represents a detected object with position
 - `Tracker`: Main tracker object that maintains tracked objects
 - `TrackedObject`: Object being tracked with history
 
 #### 7.2.2 OpenCV CSRT Tracker - Single Object Tracking
+
 **Purpose**: Track chosen object with high accuracy
 
 **Algorithm**: CSRT (Discriminative Correlation Filter with Channel and Spatial Reliability)
 
 **Advantages**:
+
 - Very accurate, even with scale changes
 - Handles partial occlusions
 - Good with non-rigid objects
 - Better than KCF, MOSSE, MedianFlow for complex scenarios
 
 **Initialization**:
+
 ```python
 tracker = cv2.TrackerCSRT_create()
 tracker.init(frame, bbox)
 ```
 
 **Update**:
+
 ```python
 success, bbox = tracker.update(frame)
 ```
@@ -885,12 +825,14 @@ success, bbox = tracker.update(frame)
 The tracking controller operates based on the system-wide state machine defined in **Section 3 (SYSTEM STATE MANAGEMENT)**.
 
 **System States** (see Section 3.2 for details):
+
 - **DETECTION_MODE**: Norfair tracks multiple objects, no lock
 - **LOCKED_MODE**: CSRT tracks single selected object
 - **LOST**: Recovery mode after CSRT failure
 - **IDLE**: No tracking active
 
 **State Transitions** (see Section 3.3 for diagram):
+
 - DETECTION_MODE → LOCKED_MODE: Manual selection (user presses object ID)
 - LOCKED_MODE → LOST: CSRT tracking failure
 - LOST → LOCKED_MODE: Successful recovery
@@ -902,6 +844,7 @@ All state management is stored in the global `system_state` data structure (see 
 ### 7.4 Detection Mode (Norfair) Implementation
 
 #### 7.4.1 Norfair Initialization
+
 ```python
 from norfair import Detection, Tracker
 from norfair.distances import euclidean_distance
@@ -916,7 +859,9 @@ tracker = Tracker(
 ```
 
 #### 7.4.2 Creating Detections from Contours
+
 For each detected object from background subtraction:
+
 ```python
 detections = []
 for contour in valid_contours:
@@ -933,6 +878,7 @@ for contour in valid_contours:
 ```
 
 #### 7.4.3 Updating Norfair Tracker
+
 ```python
 tracked_objects = tracker.update(
     detections=detections,
@@ -941,6 +887,7 @@ tracked_objects = tracker.update(
 ```
 
 #### 7.4.4 Accessing Tracked Objects
+
 ```python
 for tracked_obj in tracked_objects:
     # Get estimated position
@@ -962,7 +909,9 @@ for tracked_obj in tracked_objects:
 ```
 
 #### 7.4.5 Object Selection Method
+
 When in DETECTION_MODE, objects can only be locked via **manual selection**:
+
 - User presses numeric key (0-9) matching the object's track ID
 - Each tracked object displays its ID above the bounding box
 - Only objects with stable tracks (age > min_track_age) are selectable
@@ -971,7 +920,9 @@ When in DETECTION_MODE, objects can only be locked via **manual selection**:
 ### 7.5 Locked Mode (CSRT) Implementation
 
 #### 7.5.1 CSRT Initialization
+
 When transitioning to LOCKED_MODE:
+
 ```python
 # Create CSRT tracker
 csrt_tracker = cv2.TrackerCSRT_create()
@@ -985,7 +936,9 @@ if success:
 ```
 
 #### 7.5.2 CSRT Update
+
 On each frame in LOCKED_MODE:
+
 ```python
 success, bbox = csrt_tracker.update(frame)
 
@@ -998,6 +951,7 @@ else:
 ```
 
 #### 7.5.3 CSRT Tracker Properties
+
 - **Pros**:
   - Highly accurate
   - Handles scale changes
@@ -1009,7 +963,9 @@ else:
   - Requires reinitialization after complete occlusion
 
 #### 7.5.4 When to Reinitialize
+
 Reinitialize CSRT tracker when:
+
 - Confidence drops below threshold
 - Object completely disappears
 - User manually resets
@@ -1018,6 +974,7 @@ Reinitialize CSRT tracker when:
 ### 7.6 Tracking Parameters
 
 #### 7.6.1 Norfair Parameters
+
 ```python
 norfair_config = {
     'distance_threshold': 50,        # Max pixels for association
@@ -1029,11 +986,14 @@ norfair_config = {
 ```
 
 #### 7.6.2 CSRT Parameters
+
 CSRT uses internal parameters (no external configuration needed), but monitor:
+
 - **Success flag**: Returned by `update()`
 - **Bbox validity**: Check if bbox is reasonable (not too small/large)
 
 #### 7.6.3 Mode Transition Parameters
+
 ```python
 tracking_params = {
     'auto_select_threshold': 30,      # Frames before auto-selecting largest object
@@ -1048,17 +1008,22 @@ tracking_params = {
 When CSRT tracker is LOST:
 
 #### 7.7.1 Step 1: Search Using Background Subtraction
+
 - Continue running background subtraction
 - Look for objects with similar size/position to lost object
 
 #### 7.7.2 Step 2: Object Matching
+
 Match candidates based on:
+
 1. **Distance**: Within search radius of last known position
 2. **Size similarity**: Area within 50% of last known size
 3. **Appearance** (optional): Color histogram similarity
 
 #### 7.7.3 Step 3: Reinitialization
+
 If matching object found:
+
 ```python
 # Reinitialize CSRT with new bbox
 csrt_tracker = cv2.TrackerCSRT_create()
@@ -1067,17 +1032,22 @@ state = 'LOCKED_MODE'
 ```
 
 #### 7.7.4 Step 4: Timeout
+
 If recovery_timeout exceeded:
+
 ```python
 state = 'DETECTION_MODE'
 # Return to Norfair multi-object tracking
 ```
 
-### 7.8 Object Selection (Manual Only)
+### 7.8 Object Selection (Manual ID-based Only)
 
 The system uses **manual selection only**. The user must explicitly press a numeric key (0-9) to lock onto an object.
 
 #### 7.8.1 Manual Selection Implementation
+
+The system exclusively uses manual selection by typing the object's ID.
+
 ```python
 # User types the ID number of the object they want to lock onto
 if system_state['mode'] == 'DETECTION_MODE':
@@ -1105,6 +1075,9 @@ if system_state['mode'] == 'DETECTION_MODE':
 ```
 
 #### 7.8.2 Selection Requirements
+
+This is the sole method for object selection within the system.
+
 - Object must exist in current frame (tracked by Norfair)
 - Object ID must be 0-9 (Norfair assigns IDs automatically)
 - Optional: Object should be stable (age > min_track_age, default: 5 frames)
@@ -1113,12 +1086,15 @@ if system_state['mode'] == 'DETECTION_MODE':
 ### 7.9 Tracking Quality Metrics
 
 #### 7.9.1 Norfair Tracking Quality
+
 - **Track Age**: Number of frames object has been tracked
 - **Hit Ratio**: Detections / total frames
 - **Position Stability**: Variance of position over time
 
 #### 7.9.2 CSRT Tracking Quality
+
 Monitor these indicators:
+
 ```python
 # Check bbox validity
 def is_bbox_valid(bbox, frame_shape):
@@ -1153,6 +1129,7 @@ def estimate_confidence(bbox, bbox_history, frame):
 ### 7.10 Data Structures
 
 #### 7.10.1 System State Reference
+
 The tracking controller uses the global `system_state` dictionary defined in **Section 3.4**. Key fields used by this module:
 
 ```python
@@ -1173,6 +1150,7 @@ system_state['last_known_size']       # (w, h) dimensions
 **Note**: This module reads and modifies the system-wide state. State transitions should use the functions defined in Section 3.5.
 
 #### 7.10.2 Detection Object (for Norfair)
+
 ```python
 detection = {
     'points': np.array([[x, y]]),  # Centroid
@@ -1186,6 +1164,7 @@ detection = {
 ```
 
 #### 7.10.3 Tracked Object Info
+
 ```python
 tracked_info = {
     'id': track_id,
@@ -1203,12 +1182,14 @@ tracked_info = {
 ## 8. VIRTUAL PTZ CONTROL ENGINE
 
 ### 8.1 Control Loop Architecture
+
 - **Input**: Target object centroid in frame coordinates
 - **Output**: Pan, tilt, zoom commands
 - **Update Rate**: Match video frame rate (e.g., 30 Hz)
 - **Control Strategy**: PID controller or proportional control
 
 ### 8.2 Pan Control
+
 - **Input**: Horizontal offset from frame center
 - **Calculation**:
   - Error = (object_x - frame_center_x) / frame_width
@@ -1218,6 +1199,7 @@ tracked_info = {
 - **Pan Speed Limits**: Maximum change per frame (default: 2° per frame)
 
 ### 8.3 Tilt Control
+
 - **Input**: Vertical offset from frame center
 - **Calculation**:
   - Error = (object_y - frame_center_y) / frame_height
@@ -1227,6 +1209,7 @@ tracked_info = {
 - **Tilt Speed Limits**: Maximum change per frame (default: 1.5° per frame)
 
 ### 8.4 Zoom Control
+
 - **Trigger Conditions**:
   - Object too small: zoom in
   - Object too large: zoom out
@@ -1240,6 +1223,7 @@ tracked_info = {
 - **Zoom Speed**: Exponential change rate (default: 0.05 per frame)
 
 ### 8.5 Deadband Zones
+
 - **Center Deadband**: No adjustment if object within central region
   - Horizontal deadband: ±5% of frame width
   - Vertical deadband: ±5% of frame height
@@ -1247,6 +1231,7 @@ tracked_info = {
 - **Configurable**: Adjust based on tracking precision requirements
 
 ### 8.6 Smoothing and Damping
+
 - **Exponential Moving Average**:
   - Smooth pan/tilt commands: value = alpha × new + (1-alpha) × old
   - Alpha (smoothing factor): 0.1 to 0.5
@@ -1254,7 +1239,9 @@ tracked_info = {
 - **Acceleration Limiting**: Cap rate of velocity change
 
 ### 8.7 ROI Calculation from PTZ Parameters
+
 Given pan, tilt, and zoom:
+
 1. Calculate virtual viewport size: (width/zoom, height/zoom)
 2. Calculate viewport center from pan/tilt angles
 3. Calculate ROI top-left: (center_x - width/(2×zoom), center_y - height/(2×zoom))
@@ -1268,16 +1255,21 @@ Given pan, tilt, and zoom:
 ### 9.1 Virtual Camera Transformation (OpenCV)
 
 #### 9.1.1 ROI Extraction
+
 Direct array slicing (NumPy):
+
 - `roi = frame[y:y+h, x:x+w]`
 - Where (x, y, w, h) is the ROI rectangle
 - **Bounds checking**: Ensure x, y, w, h are within frame dimensions
 
 Alternative using OpenCV:
+
 - `roi = frame[y1:y2, x1:x2].copy()`
 
 #### 9.1.2 ROI Resizing
+
 Function: `cv2.resize(roi, dsize, interpolation)`
+
 - **roi**: Extracted region of interest
 - **dsize**: Output size as (width, height) tuple
 - **interpolation**: Resampling method
@@ -1292,7 +1284,9 @@ Function: `cv2.resize(roi, dsize, interpolation)`
   - Zooming out (shrinking): `INTER_AREA`
 
 #### 9.1.3 Complete Transform Pipeline
+
 Process:
+
 1. Calculate ROI from PTZ parameters (pan, tilt, zoom)
 2. Clamp ROI to frame boundaries
 3. Extract ROI: `roi = frame[y:y+h, x:x+w]`
@@ -1302,7 +1296,9 @@ Process:
 ### 9.2 Overlay Rendering (OpenCV)
 
 #### 9.2.1 Bounding Box Overlay
+
 Function: `cv2.rectangle(image, pt1, pt2, color, thickness)`
+
 - **image**: Frame to draw on (modified in-place)
 - **pt1**: Top-left corner (x, y)
 - **pt2**: Bottom-right corner (x+w, y+h)
@@ -1314,6 +1310,7 @@ Function: `cv2.rectangle(image, pt1, pt2, color, thickness)`
 - **thickness**: 2 or 3 pixels (use -1 for filled rectangle)
 
 Alternative with corners:
+
 - `pt2 = (x+w, y+h)` where (x, y, w, h) is bounding box
 
 #### 9.2.2 Debug Mosaic View
@@ -1321,6 +1318,7 @@ Alternative with corners:
 **Purpose**: Display processing pipeline stages side-by-side for debugging
 
 **Mosaic Layout** (2×4 or 3×3 grid):
+
 1. Original frame with detections
 2. Foreground mask (after background subtraction)
 3. After erosion
@@ -1333,6 +1331,7 @@ Alternative with corners:
 **Implementation Steps:**
 
 1. **Prepare Individual Frames**
+
    ```
    Resize each stage to same size for mosaic:
    - Target size: width//4, height//4 (quarter size)
@@ -1340,18 +1339,21 @@ Alternative with corners:
    ```
 
 2. **Convert Grayscale to Color** (for consistent display)
+
    ```
    For grayscale masks:
    color_mask = cv2.cvtColor(gray_mask, cv2.COLOR_GRAY2BGR)
    ```
 
 3. **Add Labels to Each Frame**
+
    ```
    cv2.putText(frame, "Stage Name", (10, 20),
                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
    ```
 
 4. **Create Mosaic using NumPy**
+
    ```
    Method 1 - Horizontal concatenation:
    row1 = np.hstack([frame1, frame2, frame3, frame4])
@@ -1365,11 +1367,13 @@ Alternative with corners:
    ```
 
 5. **Display Mosaic**
+
    ```
    cv2.imshow('Debug Pipeline Mosaic', mosaic)
    ```
 
 **Example Stage Labels:**
+
 - "1. Original + Detections"
 - "2. FG Mask (Raw)"
 - "3. After Erosion"
@@ -1380,12 +1384,15 @@ Alternative with corners:
 - "8. PTZ Output"
 
 **Configuration Toggle:**
+
 - Enable/disable via config: `display.show_debug_mosaic: true/false`
 - Separate window from main output
 - Optional: Save mosaic frames to video for debugging
 
 #### 9.2.3 Information Overlay (Text)
+
 Function: `cv2.putText(image, text, org, fontFace, fontScale, color, thickness, lineType)`
+
 - **image**: Frame to draw on
 - **text**: String to display
 - **org**: Bottom-left corner of text (x, y)
@@ -1400,11 +1407,13 @@ Function: `cv2.putText(image, text, org, fontFace, fontScale, color, thickness, 
 
 **Text Background** (for readability):
 Draw filled rectangle behind text:
+
 1. Calculate text size: `(w, h), baseline = cv2.getTextSize(text, font, scale, thickness)`
 2. Draw rectangle: `cv2.rectangle(image, (x, y-h-5), (x+w, y+5), (0,0,0), -1)`
 3. Draw text: `cv2.putText(image, text, (x, y), ...)`
 
 **Multi-line text example**:
+
 ```
 Position text at (10, 30) with 25-pixel line spacing:
 cv2.putText(image, "State: TRACKING", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
@@ -1414,21 +1423,26 @@ cv2.putText(image, "Zoom: 2.5x", (10, 105), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,
 ```
 
 #### 9.2.4 Trajectory Trail Overlay
+
 Function: `cv2.polylines(image, pts, isClosed, color, thickness)`
+
 - **pts**: List of trajectory points [(x1,y1), (x2,y2), ...]
 - **isClosed**: False for trajectory trail
 - **color**: (0, 255, 0) green
 - **thickness**: 2
 
 Alternative (draw circles at each point):
+
 ```
 For each point in trajectory:
   cv2.circle(image, point, 3, (0, 255, 0), -1)
 ```
 
 #### 9.2.5 Velocity Vector Overlay
+
 Draw arrow from current position in movement direction:
 Function: `cv2.arrowedLine(image, pt1, pt2, color, thickness, tipLength)`
+
 - **pt1**: Current object centroid
 - **pt2**: Predicted next position (centroid + velocity_vector)
 - **color**: (255, 0, 0) blue
@@ -1436,6 +1450,7 @@ Function: `cv2.arrowedLine(image, pt1, pt2, color, thickness, tipLength)`
 - **tipLength**: 0.3 (arrow tip size ratio)
 
 #### 9.2.4 Tracking Visualization
+
 - **Trajectory Trail**: Show past N positions of tracked object
 - **Velocity Vector**: Arrow showing object movement direction
 - **Zoom Indicator**: Visual representation of current zoom level
@@ -1446,6 +1461,7 @@ Function: `cv2.arrowedLine(image, pt1, pt2, color, thickness, tipLength)`
 The debug mosaic replaces traditional multi-view display with a comprehensive 2×4 grid showing all pipeline stages:
 
 **Mosaic Layout (8 frames):**
+
 1. **Original + Detections**: Original frame with bounding boxes
 2. **FG Mask (Raw)**: Foreground mask after background subtraction
 3. **After Erosion**: Mask after noise removal
@@ -1456,6 +1472,7 @@ The debug mosaic replaces traditional multi-view display with a comprehensive 2�
 8. **PTZ Output**: Final virtual PTZ view with tracking info
 
 **Benefits:**
+
 - Complete pipeline visualization in single window
 - Easy debugging of each processing stage
 - Identify issues at specific pipeline steps
@@ -1463,6 +1480,7 @@ The debug mosaic replaces traditional multi-view display with a comprehensive 2�
 - Toggle on/off with 'D' key during runtime
 
 ### 9.4 Color Space Handling
+
 - **Internal Processing**: BGR (OpenCV default)
 - **Display Output**: BGR for video, RGB for GUI frameworks
 - **Conversion**: Automatic when required
@@ -1474,12 +1492,15 @@ The debug mosaic replaces traditional multi-view display with a comprehensive 2�
 ### 10.1 Video Input Implementation
 
 #### 10.1.1 Video Capture Initialization
+
 Function: `cv2.VideoCapture(filename)`
+
 - **filename**: Path to video file
 - **Returns**: VideoCapture object
 - **Check success**: `if cap.isOpened():`
 
 Example:
+
 ```
 cap = cv2.VideoCapture("input_video.mp4")
 if not cap.isOpened():
@@ -1487,7 +1508,9 @@ if not cap.isOpened():
 ```
 
 #### 10.1.2 Get Video Properties
+
 Functions:
+
 - `cap.get(cv2.CAP_PROP_FRAME_WIDTH)` - frame width
 - `cap.get(cv2.CAP_PROP_FRAME_HEIGHT)` - frame height
 - `cap.get(cv2.CAP_PROP_FPS)` - frames per second
@@ -1496,6 +1519,7 @@ Functions:
 - `cap.get(cv2.CAP_PROP_POS_FRAMES)` - current frame position
 
 Convert to integers where needed:
+
 ```
 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -1503,11 +1527,14 @@ fps = cap.get(cv2.CAP_PROP_FPS)
 ```
 
 #### 10.1.3 Frame Reading
+
 Function: `cap.read()`
+
 - **Returns**: Tuple (ret, frame)
   - **ret**: Boolean (True if frame read successfully)
   - **frame**: NumPy array (BGR format) or None
 - **Usage pattern**:
+
   ```
   ret, frame = cap.read()
   if not ret:
@@ -1517,11 +1544,13 @@ Function: `cap.read()`
   ```
 
 #### 10.1.4 Advanced Input Operations
+
 - **Seek to frame**: `cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)`
 - **Seek to millisecond**: `cap.set(cv2.CAP_PROP_POS_MSEC, milliseconds)`
 - **Release**: `cap.release()` - close video file
 
 #### 10.1.5 Loop Playback Implementation
+
 ```
 When ret == False (end of video):
   cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset to beginning
@@ -1529,7 +1558,9 @@ When ret == False (end of video):
 ```
 
 #### 10.1.6 Frame Skipping
+
 Process every Nth frame:
+
 ```
 frame_counter = 0
 while True:
@@ -1544,7 +1575,9 @@ while True:
 ### 10.2 Video Output Implementation
 
 #### 10.2.1 Video Writer Initialization
+
 Function: `cv2.VideoWriter(filename, fourcc, fps, frameSize, isColor)`
+
 - **filename**: Output file path
 - **fourcc**: Codec code from `cv2.VideoWriter_fourcc()`
 - **fps**: Frame rate (match input or custom)
@@ -1553,9 +1586,11 @@ Function: `cv2.VideoWriter(filename, fourcc, fps, frameSize, isColor)`
 - **Returns**: VideoWriter object
 
 #### 10.2.2 Codec Selection (FourCC)
+
 Function: `cv2.VideoWriter_fourcc(*'XXXX')`
 
 Common codecs:
+
 - `cv2.VideoWriter_fourcc(*'mp4v')` - MPEG-4 (.mp4)
 - `cv2.VideoWriter_fourcc(*'X264')` - H.264 (.mp4)
 - `cv2.VideoWriter_fourcc(*'XVID')` - XVID (.avi)
@@ -1563,23 +1598,28 @@ Common codecs:
 - `cv2.VideoWriter_fourcc(*'H264')` - H.264 variant
 
 **Recommended**:
+
 - **Best quality**: 'X264' or 'H264' for .mp4
 - **Best compatibility**: 'MJPG' for .avi
 - **Fast writing**: 'MJPG'
 
 Example:
+
 ```
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter('output.mp4', fourcc, 30.0, (640, 480))
 ```
 
 #### 10.2.3 Writing Frames
+
 Function: `out.write(frame)`
+
 - **frame**: NumPy array (must match frameSize and isColor)
 - **No return value**
 - Frame must be correct size and type (BGR if isColor=True)
 
 Example:
+
 ```
 for each frame:
     # Process frame
@@ -1587,11 +1627,14 @@ for each frame:
 ```
 
 #### 10.2.4 Finalizing Output
+
 Function: `out.release()`
+
 - Finalizes and closes video file
 - **Must call** before program ends or file may be corrupted
 
 #### 10.2.5 Complete Video I/O Pattern
+
 ```
 # Input
 cap = cv2.VideoCapture("input.mp4")
@@ -1620,7 +1663,9 @@ out.release()
 ### 10.3 Display Window (OpenCV)
 
 #### 10.3.1 Create Window
+
 Function: `cv2.namedWindow(window_name, flags)`
+
 - **window_name**: String identifier
 - **flags**:
   - `cv2.WINDOW_NORMAL` - resizable
@@ -1628,17 +1673,22 @@ Function: `cv2.namedWindow(window_name, flags)`
   - `cv2.WINDOW_FULLSCREEN` - fullscreen mode
 
 #### 10.3.2 Display Frame
+
 Function: `cv2.imshow(window_name, frame)`
+
 - **window_name**: Window identifier (creates if doesn't exist)
 - **frame**: Image to display (NumPy array)
 
 #### 10.3.3 Wait for Key Input
+
 Function: `cv2.waitKey(delay)`
+
 - **delay**: Milliseconds to wait (1 for ~real-time, 0 for infinite)
 - **Returns**: ASCII code of key pressed, or -1 if no key
 - **Usage**: Must call to update window display
 
 Example:
+
 ```
 key = cv2.waitKey(1) & 0xFF
 if key == ord('q'):
@@ -1648,6 +1698,7 @@ elif key == ord(' '):
 ```
 
 #### 10.3.4 Close Windows
+
 - `cv2.destroyWindow(window_name)` - close specific window
 - `cv2.destroyAllWindows()` - close all OpenCV windows
 
@@ -1656,6 +1707,7 @@ elif key == ord(' '):
 ## 11. CONFIGURATION SYSTEM
 
 ### 11.1 Configuration File Format
+
 - **Format**: JSON or YAML
 - **Location**: Configuration file in project directory
 - **Structure**: Hierarchical sections matching modules
@@ -1663,25 +1715,21 @@ elif key == ord(' '):
 ### 11.2 Configuration Parameters Structure
 
 #### Background Subtraction Section
+
 ```
 background_subtraction:
-  library: "opencv" | "bgslibrary"  # Choose library
-  algorithm: string  # Algorithm name depends on library
+  algorithm: string  # Algorithm name, e.g. "MOG2", "KNN"
 
-  # OpenCV algorithms: "MOG2", "KNN", "MOG", "GMG", "CNT"
-  # BGSLibrary algorithms: "FrameDifference", "ViBe", "SuBSENSE", "PAWCS", "SigmaDelta", etc.
-
-  # OpenCV-specific parameters (used when library="opencv")
+  # OpenCV-specific parameters
   history: integer (100-1000, default: 500)
   var_threshold: float (4.0-50.0, default: 16.0)  # For MOG2
   dist2_threshold: float (200-800, default: 400.0)  # For KNN
   detect_shadows: boolean (default: true)
   learning_rate: float (-1.0 for auto, 0.0001-0.1, default: -1)
-
-  # BGSLibrary note: Uses internal defaults, no configuration needed
 ```
 
 #### Mask Post-Processing Section
+
 ```
 mask_processing:
   enable: boolean (default: true)
@@ -1695,6 +1743,7 @@ mask_processing:
 Pipeline sequence: Erosion → Dilation → Gaussian Blur → Closing → Threshold
 
 #### Object Detection Section
+
 ```
 object_detection:
   min_area: integer (pixels)
@@ -1706,6 +1755,7 @@ object_detection:
 ```
 
 #### Tracking Section
+
 ```
 tracking:
   acquisition_frames: integer (1-10)
@@ -1716,6 +1766,7 @@ tracking:
 ```
 
 #### PTZ Control Section
+
 ```
 ptz_control:
   pan_sensitivity: float (10.0-90.0 degrees)
@@ -1729,6 +1780,7 @@ ptz_control:
 ```
 
 #### Display Section
+
 ```
 display:
   show_bounding_box: boolean
@@ -1742,6 +1794,7 @@ display:
 ```
 
 #### Video I/O Section
+
 ```
 video:
   input_path: string
@@ -1753,6 +1806,7 @@ video:
 ```
 
 ### 11.3 Runtime Configuration
+
 - **Hot Reload**: Reload configuration without restart (optional)
 - **Command-line Override**: Override config file with CLI arguments
 - **Validation**: Schema validation on load
@@ -1763,6 +1817,7 @@ video:
 ## 12. PERFORMANCE REQUIREMENTS
 
 ### 12.1 Processing Speed
+
 - **Target Frame Rate**:
   - 30 fps for 720p video (real-time)
   - 15 fps minimum for 1080p video
@@ -1770,11 +1825,13 @@ video:
 - **Startup Time**: <3 seconds to begin processing
 
 ### 12.2 Resource Utilization
+
 - **CPU Usage**: <80% of single core for 720p
 - **Memory**: <500 MB for 1080p processing
 - **Disk I/O**: Sufficient for video read/write without dropping frames
 
 ### 12.3 Scalability
+
 - **Resolution Independence**: Work with any resolution (within memory limits)
 - **Frame Rate Independence**: Adapt to input video frame rate
 - **Multi-threading**: Optional parallel processing for performance boost
@@ -1784,12 +1841,14 @@ video:
 ## 13. ERROR HANDLING AND RECOVERY
 
 ### 13.1 Input Validation
+
 - **Video File Existence**: Check before processing
 - **Video Format Support**: Verify codec compatibility
 - **Configuration Validation**: Check for invalid parameter values
 - **Error Messages**: Clear, actionable error descriptions
 
 ### 13.2 Runtime Error Handling
+
 - **Frame Read Failure**:
   - Skip corrupted frame
   - Log error and continue
@@ -1803,6 +1862,7 @@ video:
   - Continue with constrained values
 
 ### 13.3 Recovery Mechanisms
+
 - **Tracking Loss Recovery**:
   - Expand search area
   - Reduce background subtraction threshold
@@ -1815,6 +1875,7 @@ video:
   - Disable non-essential overlays for performance
 
 ### 13.4 Logging
+
 - **Log Levels**: DEBUG, INFO, WARNING, ERROR
 - **Log Format**: Timestamp, level, module, message
 - **Log Output**: Console and file
@@ -1825,6 +1886,7 @@ video:
 ## 14. DATA STRUCTURES
 
 ### 14.1 Object Detection Result
+
 ```
 DetectedObject:
   - centroid: (x: float, y: float)
@@ -1837,6 +1899,7 @@ DetectedObject:
 ```
 
 ### 14.2 PTZ State
+
 ```
 PTZState:
   - pan: float (degrees)
@@ -1850,6 +1913,7 @@ PTZState:
 ```
 
 ### 14.3 Tracking State
+
 ```
 TrackingState:
   - status: enum (IDLE, ACQUIRING, TRACKING, LOST, RECOVERING)
@@ -1862,6 +1926,7 @@ TrackingState:
 ```
 
 ### 14.4 Frame Metadata
+
 ```
 FrameMetadata:
   - frame_number: integer
@@ -1878,6 +1943,7 @@ FrameMetadata:
 ## 15. PROCESSING PIPELINE SEQUENCE
 
 ### 15.1 Initialization Phase
+
 1. Load configuration from file
 2. Validate configuration parameters
 3. Open video input source
@@ -1889,45 +1955,55 @@ FrameMetadata:
 9. Initialize display window
 
 ### 15.2 Main Processing Loop
+
 For each frame:
+
 1. **Capture Frame**
+
    - Read next frame from video
    - If end of video: handle based on loop setting
    - Extract timestamp or calculate from frame number
 
 2. **Preprocessing**
+
    - Resize if needed (optional)
    - Convert to appropriate color space
    - Apply noise reduction (optional, e.g., Gaussian blur)
 
 3. **Background Subtraction**
+
    - Apply background subtraction algorithm
    - Get foreground mask
    - Update background model with current frame
 
 4. **Foreground Mask Processing**
+
    - Apply binary threshold
    - Perform morphological operations (opening, closing)
    - Remove shadows (if enabled)
 
 5. **Object Detection**
+
    - Find contours in processed mask
    - Filter contours by size, shape criteria
    - Calculate bounding boxes and centroids
    - Generate DetectedObject instances
 
 6. **Object Selection**
+
    - Apply selection strategy to choose target
    - If multiple objects: prioritize based on criteria
    - If no objects: return null
 
 7. **Tracking Update**
+
    - Update tracking state based on detection
    - Perform state transitions
    - Update confidence score
    - Associate detection with previous target (if applicable)
 
 8. **PTZ Control Calculation**
+
    - If tracking: calculate error from frame center
    - Compute pan, tilt, zoom adjustments
    - Apply smoothing and limiting
@@ -1935,25 +2011,30 @@ For each frame:
    - Calculate new ROI
 
 9. **Frame Rendering**
+
    - Extract ROI from original frame
    - Resize to output dimensions
    - Apply interpolation
 
 10. **Overlay Rendering**
+
     - Draw bounding boxes
     - Draw information text
     - Draw trajectory (if enabled)
 
 11. **Debug Mosaic** (if enabled)
+
     - Create 2×4 grid showing pipeline stages
     - Display in separate window
 
 12. **Output**
+
     - Display frame in window
     - Write frame to output video (if enabled)
     - Log frame metadata (if enabled)
 
 13. **User Input Handling**
+
     - Check for keyboard input
     - Handle pause, reset, quit commands
     - Adjust parameters if interactive mode enabled
@@ -1964,6 +2045,7 @@ For each frame:
     - Adjust processing if falling behind (optional)
 
 ### 15.3 Cleanup Phase
+
 1. Release video input source
 2. Release video output writer
 3. Close display windows
@@ -1975,12 +2057,14 @@ For each frame:
 ## 16. USER INTERFACE
 
 ### 16.1 Display Window
+
 - **Main Window**: Shows virtual PTZ output with overlays
 - **Size**: Configurable, default 800×600
 - **Title**: Application name and current status
 - **Refresh Rate**: Match video frame rate
 
 ### 16.2 Keyboard Controls
+
 - **Space**: Pause/resume playback
 - **R**: Release lock (return to detection mode) and reset PTZ
 - **B**: Reset background model
@@ -1994,6 +2078,7 @@ For each frame:
 - **F**: Toggle fullscreen mode (optional)
 
 ### 16.3 Object Selection Controls
+
 - **Number Keys (0-9)**: Select and lock onto tracked object by ID (transitions from DETECTION_MODE to LOCKED_MODE)
   - Each tracked object displays its ID number on screen (cyan text)
   - Press the corresponding number key (0-9) to lock onto that object
@@ -2002,7 +2087,9 @@ For each frame:
   - Only available in DETECTION_MODE
 
 ### 16.4 Status Display
+
 Real-time information shown in overlay:
+
 - Current tracking state
 - Pan angle (degrees)
 - Tilt angle (degrees)
@@ -2016,12 +2103,15 @@ Real-time information shown in overlay:
 ## 17. OUTPUT DATA AND LOGGING
 
 ### 17.1 Video Output
+
 - **Primary Output**: Virtual PTZ view video file
 - **Debug Output** (optional): Side-by-side comparison video
 - **Mask Output** (optional): Foreground mask video
 
 ### 17.2 Telemetry Log
+
 CSV or JSON file containing per-frame data:
+
 - Frame number
 - Timestamp
 - Pan angle
@@ -2035,7 +2125,9 @@ CSV or JSON file containing per-frame data:
 - Processing time (ms)
 
 ### 17.3 Event Log
+
 Text log file containing:
+
 - Application start/stop events
 - Configuration changes
 - State transitions (IDLE→TRACKING, etc.)
@@ -2043,7 +2135,9 @@ Text log file containing:
 - Performance metrics summary
 
 ### 17.4 Statistics Summary
+
 Final statistics file (JSON) containing:
+
 - Total frames processed
 - Average FPS
 - Tracking success rate (% of frames with active tracking)
@@ -2056,7 +2150,9 @@ Final statistics file (JSON) containing:
 ## 18. TESTING REQUIREMENTS
 
 ### 18.1 Unit Testing
+
 Test individual components:
+
 - Background subtraction with synthetic sequences
 - Object detection with known objects
 - PTZ calculations with known inputs
@@ -2064,20 +2160,25 @@ Test individual components:
 - Configuration loading and validation
 
 ### 18.2 Integration Testing
+
 Test component interactions:
+
 - Full pipeline with sample videos
 - State transitions under various scenarios
 - Error handling and recovery
 - Configuration changes during runtime
 
 ### 18.3 Performance Testing
+
 - Benchmark processing speed on various resolutions
 - Memory usage monitoring
 - CPU utilization profiling
 - Frame drop detection
 
 ### 18.4 Test Scenarios
+
 Provide test videos covering:
+
 - **Simple Scene**: Single person walking, static background
 - **Complex Scene**: Multiple moving objects, dynamic background
 - **Challenging Conditions**:
@@ -2088,6 +2189,7 @@ Provide test videos covering:
   - Objects entering/leaving frame
 
 ### 18.5 Validation Criteria
+
 - **Tracking Accuracy**: Object stays centered within ±10% of frame
 - **Tracking Stability**: No excessive jitter (measured by pan/tilt variance)
 - **Recovery Time**: Reacquire tracking within 2 seconds of loss
@@ -2098,36 +2200,42 @@ Provide test videos covering:
 ## 19. FUTURE ENHANCEMENTS (Out of Scope for Initial Version)
 
 ### 19.1 Advanced Object Detection
+
 - Deep learning-based detection (YOLO, SSD)
 - Multi-object tracking
 - Object classification (person, vehicle, animal, etc.)
 - Specific object filtering
 
 ### 19.2 Advanced Tracking
+
 - Kalman filter for motion prediction
 - Optical flow for motion estimation
 - Appearance-based tracking (color histograms, HOG)
 - Object persistence across occlusions
 
 ### 19.3 Physical Camera Integration
+
 - PTZ camera protocol support (ONVIF, Visca, PELCO-D)
 - Network camera streaming (RTSP, HTTP)
 - Real-time camera control commands
 - Camera preset positions
 
 ### 19.4 Advanced PTZ Control
+
 - Trajectory prediction and anticipation
 - Multi-zone tracking
 - Auto-patrol patterns when no object detected
 - Smooth cinematic camera movements
 
 ### 19.5 User Interface Enhancements
+
 - GUI configuration editor
 - Real-time parameter adjustment sliders
 - Multiple camera view support
 - Playback controls (seek, speed adjustment)
 
 ### 19.6 Analytics and Reporting
+
 - Heatmaps of object movement
 - Dwell time analysis
 - Event detection (object entering/leaving zones)
@@ -2144,6 +2252,7 @@ This section provides the detailed step-by-step workflow for implementing the sy
 #### 20.1.1 Initialization Phase
 
 **Step 1: Import Libraries**
+
 ```python
 # Required imports
 import cv2                # For video I/O and image processing
@@ -2158,11 +2267,13 @@ from norfair.distances import euclidean_distance
 ```
 
 **Step 2: Load Configuration**
+
 - Read JSON/YAML config file
 - Set default values for missing parameters
 - Validate parameter ranges
 
 **Step 3: Initialize Video Capture**
+
 ```
 cap = cv2.VideoCapture(input_video_path)
 Verify: if not cap.isOpened(): handle error
@@ -2175,7 +2286,8 @@ Get properties:
 
 **Step 4: Initialize Background Subtractor**
 
-*Primary Option: BGSLibrary (Recommended)*
+_Primary Option: BGSLibrary (Recommended)_
+
 ```python
 import pybgs
 
@@ -2190,7 +2302,8 @@ bg_subtractor = pybgs.PAWCS()
 # bg_subtractor = pybgs.FrameDifference() # Fastest (testing only)
 ```
 
-*Legacy Option: OpenCV (if needed)*
+_Legacy Option: OpenCV (if needed)_
+
 ```python
 # OpenCV MOG2
 bg_subtractor = cv2.createBackgroundSubtractorMOG2(
@@ -2208,6 +2321,7 @@ bg_subtractor = cv2.createBackgroundSubtractorMOG2(
 ```
 
 **Step 5: Initialize System State**
+
 ```
 from norfair import Detection, Tracker
 from norfair.distances import euclidean_distance
@@ -2260,6 +2374,7 @@ system_state = {
 **Step 6: Initialize Output Streams**
 
 **Step 7: Initialize Video Writer** (if saving output)
+
 ```
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter(
@@ -2271,6 +2386,7 @@ out = cv2.VideoWriter(
 ```
 
 **Step 8: Create Display Window**
+
 ```
 cv2.namedWindow('PTZ Tracking', cv2.WINDOW_NORMAL)
 ```
@@ -2729,6 +2845,7 @@ cv2.destroyAllWindows()
 When using bgslibrary instead of OpenCV's built-in subtractors:
 
 **Differences:**
+
 1. **Import**: `import pybgs`
 2. **Initialization**: `bg_subtractor = pybgs.AlgorithmName()`
 3. **Application**: `fg_mask = bg_subtractor.apply(frame)` (no learningRate parameter)
@@ -2770,12 +2887,14 @@ When using bgslibrary instead of OpenCV's built-in subtractors:
 ## 21. DEVELOPMENT GUIDELINES
 
 ### 21.1 Programming Language
+
 - **Primary**: Python 3.8+
 - **Rationale**: Rich ecosystem for computer vision (OpenCV, NumPy)
 
 ### 21.2 Environment Management with Pixi
 
 #### 21.2.1 Why Pixi?
+
 - **Modern package manager**: Fast, reproducible environments
 - **Cross-platform**: Works on Windows, Linux, macOS
 - **Lock files**: Ensures reproducible builds
@@ -2784,7 +2903,9 @@ When using bgslibrary instead of OpenCV's built-in subtractors:
 - **No separate venv**: Automatic environment isolation
 
 #### 21.2.2 Pixi Installation
-Visit: https://pixi.sh or install via:
+
+Visit: <https://pixi.sh> or install via:
+
 ```bash
 # Linux/macOS
 curl -fsSL https://pixi.sh/install.sh | bash
@@ -2799,6 +2920,7 @@ pixi --version
 #### 21.2.3 Project Dependencies
 
 **Required Libraries:**
+
 - **opencv**: Computer vision library (from conda-forge)
   - Provides: cv2 module, video I/O, image processing
   - Version: 4.5+
@@ -2809,6 +2931,7 @@ pixi --version
   - Version: 3.8-3.11 recommended
 
 **Optional Libraries:**
+
 - **pybgs**: BGSLibrary Python bindings (from PyPI)
   - Installation: Via pip in Pixi environment
   - Use when: Need advanced background subtraction algorithms (43+ algorithms)
@@ -2820,6 +2943,7 @@ pixi --version
   - For: CSV/JSON log analysis
 
 **Development Tools:**
+
 - **ipython**: Enhanced interactive shell
 - **pytest**: Testing framework (for unit tests)
 
@@ -2907,6 +3031,7 @@ track = "python main.py"
 #### 21.2.6 Project Setup with Pixi
 
 **Initial Setup:**
+
 ```bash
 # Navigate to project directory
 cd PTZ_tracker_dumb
@@ -2925,6 +3050,7 @@ pixi install --environment dev
 ```
 
 **Running the Application:**
+
 ```bash
 # Run main tracking application
 pixi run track
@@ -2940,6 +3066,7 @@ pixi run python main.py --input video.mp4 --output result.mp4
 ```
 
 **Development Workflow:**
+
 ```bash
 # Enter Pixi shell (activates environment)
 pixi shell
@@ -2954,6 +3081,7 @@ exit
 ```
 
 **Managing Dependencies:**
+
 ```bash
 # Add a new dependency
 pixi add scipy
@@ -2974,6 +3102,7 @@ pixi list
 #### 21.2.7 Environment Isolation
 
 Pixi automatically handles environment isolation:
+
 - **No manual venv activation needed**
 - **Reproducible across machines** via `pixi.lock` file
 - **Automatic environment selection** based on tasks/commands
@@ -2982,6 +3111,7 @@ Pixi automatically handles environment isolation:
 #### 21.2.8 Cross-Platform Compatibility
 
 Pixi ensures the project works across platforms:
+
 ```bash
 # On Linux
 pixi run track
@@ -3020,6 +3150,7 @@ pixi run test
 #### 21.2.10 Legacy pip Installation (Alternative)
 
 If Pixi is not available, fall back to traditional pip:
+
 ```bash
 # Create virtual environment
 python -m venv venv
@@ -3074,35 +3205,41 @@ PTZ_tracker_dumb/
 **Core Modules:**
 
 1. **video_io.py**: Video input/output handling
+
    - VideoCapture wrapper
    - VideoWriter wrapper
    - Frame buffering
 
 2. **background_subtraction.py**: Background subtraction algorithms
+
    - OpenCV subtractor wrapper (MOG2, KNN, etc.)
    - BGSLibrary wrapper (SuBSENSE, PAWCS, etc.)
    - Mask post-processing pipeline
    - Unified interface for both libraries
 
 3. **object_detection.py**: Object detection and filtering
+
    - Contour detection
    - Filtering (area, aspect ratio, solidity)
    - Bounding box calculation
    - Centroid calculation
 
 4. **tracking.py**: Tracking logic and state management
+
    - State machine (IDLE, ACQUIRING, TRACKING, LOST)
    - Object association
    - Confidence scoring
    - Trajectory recording
 
 5. **ptz_control.py**: Virtual PTZ calculations
+
    - Pan/tilt calculation from centroid
    - Zoom control from object size
    - Smoothing and deadband
    - ROI calculation
 
 6. **rendering.py**: Frame rendering and overlays
+
    - ROI extraction and resizing
    - Bounding box overlay
    - Crosshair overlay
@@ -3110,6 +3247,7 @@ PTZ_tracker_dumb/
    - Trajectory visualization
 
 7. **config.py**: Configuration loading and validation
+
    - YAML/JSON loading
    - Parameter validation
    - Default values
@@ -3121,6 +3259,7 @@ PTZ_tracker_dumb/
    - Cleanup
 
 ### 21.5 Coding Standards
+
 - Follow PEP 8 style guidelines
 - Type hints for function signatures
 - Docstrings for all classes and functions
@@ -3128,6 +3267,7 @@ PTZ_tracker_dumb/
 - Avoid global variables (use class-based state)
 
 ### 21.6 Documentation
+
 - README with setup and usage instructions
 - Architecture diagram
 - Configuration parameter reference

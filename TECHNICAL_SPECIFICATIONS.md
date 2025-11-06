@@ -634,21 +634,73 @@ Function: `cv2.rectangle(image, pt1, pt2, color, thickness)`
 Alternative with corners:
 - `pt2 = (x+w, y+h)` where (x, y, w, h) is bounding box
 
-#### 8.2.2 Crosshair Overlay
-**Method 1**: Draw lines
-Function: `cv2.line(image, pt1, pt2, color, thickness)`
-```
-Center crosshair at (cx, cy) with size s:
-- Horizontal: cv2.line(image, (cx-s, cy), (cx+s, cy), (255, 255, 255), 2)
-- Vertical: cv2.line(image, (cx, cy-s), (cx, cy+s), (255, 255, 255), 2)
-```
+#### 8.2.2 Debug Mosaic View
 
-**Method 2**: Draw circle
-Function: `cv2.circle(image, center, radius, color, thickness)`
-- **center**: (cx, cy) frame center
-- **radius**: 10-20 pixels
-- **color**: (255, 255, 255) white or (255, 255, 0) cyan
-- **thickness**: 2 (outline) or -1 (filled)
+**Purpose**: Display processing pipeline stages side-by-side for debugging
+
+**Mosaic Layout** (2×4 or 3×3 grid):
+1. Original frame with detections
+2. Foreground mask (after background subtraction)
+3. After erosion
+4. After dilation
+5. After Gaussian blur
+6. After morphological closing
+7. After binary threshold (final mask)
+8. Virtual PTZ output
+
+**Implementation Steps:**
+
+1. **Prepare Individual Frames**
+   ```
+   Resize each stage to same size for mosaic:
+   - Target size: width//4, height//4 (quarter size)
+   - Use cv2.resize(image, (w, h), cv2.INTER_AREA)
+   ```
+
+2. **Convert Grayscale to Color** (for consistent display)
+   ```
+   For grayscale masks:
+   color_mask = cv2.cvtColor(gray_mask, cv2.COLOR_GRAY2BGR)
+   ```
+
+3. **Add Labels to Each Frame**
+   ```
+   cv2.putText(frame, "Stage Name", (10, 20),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+   ```
+
+4. **Create Mosaic using NumPy**
+   ```
+   Method 1 - Horizontal concatenation:
+   row1 = np.hstack([frame1, frame2, frame3, frame4])
+   row2 = np.hstack([frame5, frame6, frame7, frame8])
+   mosaic = np.vstack([row1, row2])
+
+   Method 2 - Using cv2.hconcat and cv2.vconcat:
+   row1 = cv2.hconcat([frame1, frame2, frame3, frame4])
+   row2 = cv2.hconcat([frame5, frame6, frame7, frame8])
+   mosaic = cv2.vconcat([row1, row2])
+   ```
+
+5. **Display Mosaic**
+   ```
+   cv2.imshow('Debug Pipeline Mosaic', mosaic)
+   ```
+
+**Example Stage Labels:**
+- "1. Original + Detections"
+- "2. FG Mask (Raw)"
+- "3. After Erosion"
+- "4. After Dilation"
+- "5. After Blur"
+- "6. After Closing"
+- "7. Final Mask"
+- "8. PTZ Output"
+
+**Configuration Toggle:**
+- Enable/disable via config: `display.show_debug_mosaic: true/false`
+- Separate window from main output
+- Optional: Save mosaic frames to video for debugging
 
 #### 8.2.3 Information Overlay (Text)
 Function: `cv2.putText(image, text, org, fontFace, fontScale, color, thickness, lineType)`
@@ -707,12 +759,26 @@ Function: `cv2.arrowedLine(image, pt1, pt2, color, thickness, tipLength)`
 - **Zoom Indicator**: Visual representation of current zoom level
 - **Deadband Zone**: Rectangle showing center deadband area
 
-### 8.3 Multi-View Display
-Optional side-by-side or picture-in-picture views:
-- **Original Frame**: Full original video with detections
-- **Virtual PTZ View**: Current zoomed/panned view
-- **Foreground Mask**: Binary detection mask
-- **Background Model**: Current background estimate (optional)
+### 8.3 Debug Mosaic Display
+
+The debug mosaic replaces traditional multi-view display with a comprehensive 2×4 grid showing all pipeline stages:
+
+**Mosaic Layout (8 frames):**
+1. **Original + Detections**: Original frame with bounding boxes
+2. **FG Mask (Raw)**: Foreground mask after background subtraction
+3. **After Erosion**: Mask after noise removal
+4. **After Dilation**: Mask after object restoration
+5. **After Blur**: Mask after Gaussian smoothing
+6. **After Closing**: Mask after hole filling
+7. **Final Mask**: Binary mask after threshold (used for detection)
+8. **PTZ Output**: Final virtual PTZ view with tracking info
+
+**Benefits:**
+- Complete pipeline visualization in single window
+- Easy debugging of each processing stage
+- Identify issues at specific pipeline steps
+- Compare input vs output
+- Toggle on/off with 'D' key during runtime
 
 ### 8.4 Color Space Handling
 - **Internal Processing**: BGR (OpenCV default)
@@ -1193,21 +1259,24 @@ For each frame:
 
 10. **Overlay Rendering**
     - Draw bounding boxes
-    - Draw crosshair
     - Draw information text
     - Draw trajectory (if enabled)
 
-11. **Output**
+11. **Debug Mosaic** (if enabled)
+    - Create 2×4 grid showing pipeline stages
+    - Display in separate window
+
+12. **Output**
     - Display frame in window
     - Write frame to output video (if enabled)
     - Log frame metadata (if enabled)
 
-12. **User Input Handling**
+13. **User Input Handling**
     - Check for keyboard input
     - Handle pause, reset, quit commands
     - Adjust parameters if interactive mode enabled
 
-13. **Performance Monitoring**
+14. **Performance Monitoring**
     - Calculate frame processing time
     - Update FPS counter
     - Adjust processing if falling behind (optional)
@@ -1233,6 +1302,7 @@ For each frame:
 - **Space**: Pause/resume playback
 - **R**: Reset tracking and PTZ to defaults
 - **B**: Reset background model
+- **D**: Toggle debug mosaic view
 - **Q/Esc**: Quit application
 - **S**: Save current frame as image
 - **+/-**: Manually adjust zoom level
@@ -1504,13 +1574,26 @@ while True:
     # fg_mask = bg_subtractor.apply(frame)
 
     # STEP 3: Post-process Foreground Mask
+    # Save intermediate stages for debug mosaic
+    mask_stages = {}
+    mask_stages['raw'] = fg_mask.copy()
+
     # Recommended cleanup sequence:
     kernel = np.ones((5, 5), np.uint8)
     fg_mask = cv2.erode(fg_mask, kernel, iterations=1)
+    mask_stages['erosion'] = fg_mask.copy()
+
     fg_mask = cv2.dilate(fg_mask, kernel, iterations=1)
+    mask_stages['dilation'] = fg_mask.copy()
+
     fg_mask = cv2.GaussianBlur(fg_mask, (3, 3), 0)
+    mask_stages['blur'] = fg_mask.copy()
+
     fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel)
+    mask_stages['closing'] = fg_mask.copy()
+
     _, fg_mask = cv2.threshold(fg_mask, 130, 255, cv2.THRESH_BINARY)
+    mask_stages['final'] = fg_mask.copy()
 
     # STEP 4: Find Contours
     contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -1654,11 +1737,6 @@ while True:
         color = (0, 255, 0)  # Green for tracking
         cv2.rectangle(display_frame, (x_roi, y_roi), (x_roi+w_roi, y_roi+h_roi), color, 2)
 
-    # Draw crosshair at center
-    center = (frame_width // 2, frame_height // 2)
-    cv2.line(display_frame, (center[0]-20, center[1]), (center[0]+20, center[1]), (255,255,255), 2)
-    cv2.line(display_frame, (center[0], center[1]-20), (center[0], center[1]+20), (255,255,255), 2)
-
     # Draw info text
     cv2.putText(display_frame, f"State: {tracking_state['status']}", (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
@@ -1669,13 +1747,58 @@ while True:
     cv2.putText(display_frame, f"Zoom: {ptz_state['zoom']:.2f}x", (10, 105),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
 
-    # STEP 11: Display and Save
+    # STEP 11: Create Debug Mosaic (if enabled)
+    if show_debug_mosaic:
+        # Prepare frames for mosaic (resize to quarter size)
+        mosaic_h, mosaic_w = frame_height // 4, frame_width // 4
+
+        # Original with detections
+        orig_display = original_frame.copy()
+        if target_object:
+            x, y, w, h = target_object['bbox']
+            cv2.rectangle(orig_display, (x, y), (x+w, y+h), (0, 255, 0), 2)
+        f1 = cv2.resize(orig_display, (mosaic_w, mosaic_h))
+        cv2.putText(f1, "1. Original", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
+
+        # Convert masks to color for display
+        f2 = cv2.resize(cv2.cvtColor(mask_stages['raw'], cv2.COLOR_GRAY2BGR), (mosaic_w, mosaic_h))
+        cv2.putText(f2, "2. FG Mask (Raw)", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
+
+        f3 = cv2.resize(cv2.cvtColor(mask_stages['erosion'], cv2.COLOR_GRAY2BGR), (mosaic_w, mosaic_h))
+        cv2.putText(f3, "3. After Erosion", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
+
+        f4 = cv2.resize(cv2.cvtColor(mask_stages['dilation'], cv2.COLOR_GRAY2BGR), (mosaic_w, mosaic_h))
+        cv2.putText(f4, "4. After Dilation", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
+
+        f5 = cv2.resize(cv2.cvtColor(mask_stages['blur'], cv2.COLOR_GRAY2BGR), (mosaic_w, mosaic_h))
+        cv2.putText(f5, "5. After Blur", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
+
+        f6 = cv2.resize(cv2.cvtColor(mask_stages['closing'], cv2.COLOR_GRAY2BGR), (mosaic_w, mosaic_h))
+        cv2.putText(f6, "6. After Closing", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
+
+        f7 = cv2.resize(cv2.cvtColor(mask_stages['final'], cv2.COLOR_GRAY2BGR), (mosaic_w, mosaic_h))
+        cv2.putText(f7, "7. Final Mask", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
+
+        f8 = cv2.resize(display_frame, (mosaic_w, mosaic_h))
+        cv2.putText(f8, "8. PTZ Output", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
+
+        # Create mosaic (2 rows x 4 columns)
+        row1 = np.hstack([f1, f2, f3, f4])
+        row2 = np.hstack([f5, f6, f7, f8])
+        mosaic = np.vstack([row1, row2])
+
+        cv2.imshow('Debug Pipeline Mosaic', mosaic)
+
+        if save_debug_mosaic:
+            debug_out.write(mosaic)
+
+    # STEP 12: Display and Save Main Output
     cv2.imshow('PTZ Tracking', display_frame)
 
     if save_output:
         out.write(display_frame)
 
-    # STEP 12: Handle User Input
+    # STEP 13: Handle User Input
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
         break
@@ -1685,6 +1808,9 @@ while True:
         # Reset tracking and PTZ
         tracking_state['status'] = 'IDLE'
         ptz_state = {'pan': 0.0, 'tilt': 0.0, 'zoom': 1.0}
+    elif key == ord('d'):
+        # Toggle debug mosaic
+        show_debug_mosaic = not show_debug_mosaic
 ```
 
 #### 19.1.3 Cleanup Phase

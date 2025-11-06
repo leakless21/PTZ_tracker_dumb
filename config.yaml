@@ -67,11 +67,10 @@ display:
   window_name: "PTZ Tracking"
   window_mode: "normal"  # Options: normal, fullscreen
   show_bounding_box: true
-  show_crosshair: true
   show_info_overlay: true
   show_trajectory: false
-  show_original: false  # Show original frame in separate window
-  show_mask: false  # Show foreground mask in separate window
+  show_debug_mosaic: true  # Show 2x4 grid of pipeline stages for debugging
+  save_debug_mosaic: false  # Save mosaic to video file
   output_width: null  # null = same as input
   output_height: null  # null = same as input
 

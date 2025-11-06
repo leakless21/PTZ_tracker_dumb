@@ -41,11 +41,41 @@ object_detection:
   min_extent: 0.2
   selection_strategy: "largest"  # Options: largest, center, previous
 
-# Tracking
+# Tracking - Dual Mode System
 tracking:
-  acquisition_frames: 3  # Consecutive detections required to start tracking
-  lost_frames_threshold: 10  # Frames before declaring tracking lost
-  recovery_timeout: 5.0  # Seconds
+  # Tracking Mode: "detection" (Norfair multi-object) or "locked" (CSRT single-object)
+  initial_mode: "detection"  # Start in detection mode
+
+  # Norfair Multi-Object Tracking (Detection Mode)
+  norfair:
+    distance_threshold: 50  # Maximum pixels for object association
+    hit_counter_max: 10  # Frames to keep track without detection
+    initialization_delay: 3  # Frames before confirming new track
+    pointwise_hit_counter_max: 4
+
+  # CSRT Single-Object Tracking (Locked Mode)
+  csrt:
+    enable: true  # Enable CSRT tracker
+    lost_frames_threshold: 15  # Frames before declaring CSRT lost
+    recovery_timeout: 3.0  # Seconds to attempt recovery
+    min_bbox_area: 100  # Minimum bbox area (pixels)
+    max_bbox_area_fraction: 0.8  # Maximum bbox area (fraction of frame)
+
+  # Object Selection
+  selection:
+    method: "largest"  # Options: largest, center, manual, auto
+    auto_select_threshold: 30  # Frames before auto-selecting (if auto enabled)
+    click_tolerance: 50  # Pixels tolerance for manual selection
+    min_track_age: 5  # Minimum frames tracked before selectable
+
+  # Mode Transition
+  transition:
+    enable_auto_lock: false  # Automatically lock onto largest object
+    enable_manual_selection: true  # Allow mouse click selection
+    recovery_search_radius: 150  # Pixels to search for lost object
+    size_similarity_threshold: 0.5  # 0.0-1.0 for object matching
+
+  # PTZ Deadband
   deadband_x: 0.05  # Horizontal deadband (fraction of frame width)
   deadband_y: 0.05  # Vertical deadband (fraction of frame height)
 

@@ -16,6 +16,7 @@ pyyaml = ">=5.0"
 
 [pypi-dependencies]
 pybgs = "*"
+norfair = "*"
 
 [tasks]
 track = "python main.py"

@@ -475,46 +475,369 @@ When multiple objects detected, prioritize by:
 
 ## 6. TRACKING CONTROLLER
 
-### 6.1 Tracking States
-- **IDLE**: No tracking active, searching for objects
-- **ACQUIRING**: Object detected, initializing tracking
-- **TRACKING**: Actively tracking object
-- **LOST**: Tracking lost, attempting recovery
+### 6.1 Dual-Mode Tracking System
+
+This system implements two tracking modes:
+1. **Detection Mode (Norfair)**: When no object is chosen, use background subtraction + Norfair for multi-object tracking
+2. **Locked Mode (CSRT)**: When object is chosen, use OpenCV CSRT tracker for robust single-object tracking
+
+### 6.2 Tracking Libraries
+
+#### 6.2.1 Norfair - Multi-Object Tracking
+**Purpose**: Track multiple detected objects when in detection mode
+
+**Installation**:
+```bash
+pip install norfair
+# or with Pixi:
+pixi add --pypi norfair
+```
+
+**Key Features**:
+- Tracks multiple objects simultaneously
+- Uses detections from background subtraction
+- Handles object association across frames
+- Robust to temporary occlusions
+- Distance-based matching
+
+**Core Components**:
+- `Detection`: Represents a detected object with position
+- `Tracker`: Main tracker object that maintains tracked objects
+- `TrackedObject`: Object being tracked with history
+
+#### 6.2.2 OpenCV CSRT Tracker - Single Object Tracking
+**Purpose**: Track chosen object with high accuracy
+
+**Algorithm**: CSRT (Discriminative Correlation Filter with Channel and Spatial Reliability)
+
+**Advantages**:
+- Very accurate, even with scale changes
+- Handles partial occlusions
+- Good with non-rigid objects
+- Better than KCF, MOSSE, MedianFlow for complex scenarios
+
+**Initialization**:
+```python
+tracker = cv2.TrackerCSRT_create()
+tracker.init(frame, bbox)
+```
+
+**Update**:
+```python
+success, bbox = tracker.update(frame)
+```
+
+### 6.3 Tracking States
+
+- **DETECTION_MODE**: Using Norfair to track multiple detections, no object chosen
+- **SELECTING**: User is selecting which object to lock onto
+- **LOCKED_MODE**: Using CSRT to track single chosen object
+- **LOST**: CSRT tracker lost the object
 - **RECOVERING**: Attempting to reacquire lost object
 
-### 6.2 State Transitions
-- IDLE → ACQUIRING: Object detected for N consecutive frames
-- ACQUIRING → TRACKING: Object position stable for M frames
-- TRACKING → LOST: Object not detected for K frames
-- LOST → RECOVERING: Initiate search pattern
-- RECOVERING → TRACKING: Object redetected
-- RECOVERING → IDLE: Recovery timeout exceeded
-- Any → IDLE: Manual reset
+### 6.4 State Transitions
 
-### 6.3 Tracking Parameters
-- **Acquisition Frames**: Consecutive detections required (default: 3)
-- **Stability Frames**: Frames for stable tracking (default: 5)
-- **Lost Frames Threshold**: Frames before declaring lost (default: 10)
-- **Recovery Timeout**: Maximum recovery duration in seconds (default: 5)
-- **Position Stability Threshold**: Maximum centroid movement in pixels (default: 5)
+**DETECTION_MODE → SELECTING**: User clicks on object or automatic selection triggered
+**SELECTING → LOCKED_MODE**: Object selection confirmed, CSRT initialized
+**LOCKED_MODE → LOST**: CSRT reports tracking failure
+**LOST → RECOVERING**: Attempt to redetect object using background subtraction
+**RECOVERING → LOCKED_MODE**: Object redetected, reinitialize CSRT
+**RECOVERING → DETECTION_MODE**: Recovery failed, return to multi-object tracking
+**LOCKED_MODE → DETECTION_MODE**: User manually releases lock (press 'R' or 'Escape')
+**Any → DETECTION_MODE**: Manual reset
 
-### 6.4 Object Association
-When reacquiring or handling occlusions:
-- **Distance-based**: Associate to nearest object within threshold
-- **Appearance-based**: Compare color histograms or basic features
-- **Motion prediction**: Predict position using velocity estimate
-- **IoU (Intersection over Union)**: Overlap with predicted bounding box
+### 6.5 Detection Mode (Norfair) Implementation
 
-### 6.5 Tracking Quality Metrics
-- **Confidence Score**: 0.0 to 1.0, based on:
-  - Object size consistency
-  - Position smoothness
-  - Detection consistency
-  - Time since last detection
-- **Update Confidence Calculation**:
-  - Decay over time when object not detected
-  - Increase when object consistently detected
-  - Use exponential moving average
+#### 6.5.1 Norfair Initialization
+```python
+from norfair import Detection, Tracker
+from norfair.distances import euclidean_distance
+
+tracker = Tracker(
+    distance_function=euclidean_distance,
+    distance_threshold=50,  # Maximum distance for association
+    hit_counter_max=10,     # Frames to keep object without detection
+    initialization_delay=3,  # Frames before confirming new object
+    pointwise_hit_counter_max=4
+)
+```
+
+#### 6.5.2 Creating Detections from Contours
+For each detected object from background subtraction:
+```python
+detections = []
+for contour in valid_contours:
+    x, y, w, h = cv2.boundingRect(contour)
+    centroid = np.array([x + w/2, y + h/2])
+
+    # Create Norfair Detection
+    detection = Detection(
+        points=centroid.reshape(1, 2),  # Shape: (1, 2)
+        scores=np.array([confidence]),   # Optional confidence score
+        data={'bbox': (x, y, w, h)}     # Store additional data
+    )
+    detections.append(detection)
+```
+
+#### 6.5.3 Updating Norfair Tracker
+```python
+tracked_objects = tracker.update(
+    detections=detections,
+    period=1  # Update period (frames)
+)
+```
+
+#### 6.5.4 Accessing Tracked Objects
+```python
+for tracked_obj in tracked_objects:
+    # Get estimated position
+    position = tracked_obj.estimate[0]  # Shape: (2,) for [x, y]
+    x, y = position[0], position[1]
+
+    # Get bounding box from data (if stored)
+    if tracked_obj.last_detection is not None:
+        bbox = tracked_obj.last_detection.data.get('bbox')
+
+    # Get tracking ID
+    track_id = tracked_obj.id
+
+    # Check if object is being tracked actively
+    is_tracking = not tracked_obj.is_initializing
+
+    # Age of track (frames)
+    age = tracked_obj.age
+```
+
+#### 6.5.5 Object Selection Criteria
+When in DETECTION_MODE, select object for locking based on:
+1. **Largest Object**: Highest area
+2. **Closest to Center**: Nearest to frame center
+3. **Most Stable**: Longest tracking age
+4. **User Click**: Manual selection by clicking
+
+### 6.6 Locked Mode (CSRT) Implementation
+
+#### 6.6.1 CSRT Initialization
+When transitioning to LOCKED_MODE:
+```python
+# Create CSRT tracker
+csrt_tracker = cv2.TrackerCSRT_create()
+
+# Initialize with chosen object's bounding box
+bbox = (x, y, w, h)  # From selected Norfair tracked object
+success = csrt_tracker.init(frame, bbox)
+
+if success:
+    state = 'LOCKED_MODE'
+```
+
+#### 6.6.2 CSRT Update
+On each frame in LOCKED_MODE:
+```python
+success, bbox = csrt_tracker.update(frame)
+
+if success:
+    x, y, w, h = map(int, bbox)
+    # Use bbox for PTZ control
+else:
+    # Tracking failed
+    state = 'LOST'
+```
+
+#### 6.6.3 CSRT Tracker Properties
+- **Pros**:
+  - Highly accurate
+  - Handles scale changes
+  - Robust to partial occlusions
+  - Good with rotation
+- **Cons**:
+  - Slower than KCF or MOSSE
+  - Can drift over long sequences
+  - Requires reinitialization after complete occlusion
+
+#### 6.6.4 When to Reinitialize
+Reinitialize CSRT tracker when:
+- Confidence drops below threshold
+- Object completely disappears
+- User manually resets
+- Bbox becomes too small or too large
+
+### 6.7 Tracking Parameters
+
+#### 6.7.1 Norfair Parameters
+```python
+norfair_config = {
+    'distance_threshold': 50,        # Max pixels for association
+    'hit_counter_max': 10,           # Frames to keep track without detection
+    'initialization_delay': 3,       # Frames to confirm new track
+    'pointwise_hit_counter_max': 4,  # Per-point hit counter
+    'distance_function': 'euclidean' # or 'iou'
+}
+```
+
+#### 6.7.2 CSRT Parameters
+CSRT uses internal parameters (no external configuration needed), but monitor:
+- **Success flag**: Returned by `update()`
+- **Bbox validity**: Check if bbox is reasonable (not too small/large)
+
+#### 6.7.3 Mode Transition Parameters
+```python
+tracking_params = {
+    'auto_select_threshold': 30,      # Frames before auto-selecting largest object
+    'lost_frames_threshold': 15,      # Frames before declaring CSRT lost
+    'recovery_timeout': 3.0,          # Seconds to attempt recovery
+    'min_detection_confidence': 0.5,  # Minimum confidence for redetection
+}
+```
+
+### 6.8 Recovery Strategy
+
+When CSRT tracker is LOST:
+
+#### 6.8.1 Step 1: Search Using Background Subtraction
+- Continue running background subtraction
+- Look for objects with similar size/position to lost object
+
+#### 6.8.2 Step 2: Object Matching
+Match candidates based on:
+1. **Distance**: Within search radius of last known position
+2. **Size similarity**: Area within 50% of last known size
+3. **Appearance** (optional): Color histogram similarity
+
+#### 6.8.3 Step 3: Reinitialization
+If matching object found:
+```python
+# Reinitialize CSRT with new bbox
+csrt_tracker = cv2.TrackerCSRT_create()
+csrt_tracker.init(frame, matched_bbox)
+state = 'LOCKED_MODE'
+```
+
+#### 6.8.4 Step 4: Timeout
+If recovery_timeout exceeded:
+```python
+state = 'DETECTION_MODE'
+# Return to Norfair multi-object tracking
+```
+
+### 6.9 Object Selection Methods
+
+#### 6.9.1 Automatic Selection (Largest Object)
+```python
+if state == 'DETECTION_MODE' and auto_select_enabled:
+    # Find largest tracked object
+    largest_obj = max(tracked_objects, key=lambda obj: get_area(obj))
+
+    if largest_obj.age > auto_select_threshold:
+        # Lock onto this object
+        transition_to_locked_mode(largest_obj)
+```
+
+#### 6.9.2 Manual Selection (Mouse Click)
+```python
+def on_mouse_click(event, x, y, flags, param):
+    if event == cv2.EVENT_LBUTTONDOWN and state == 'DETECTION_MODE':
+        # Find tracked object nearest to click
+        clicked_obj = find_nearest_tracked_object(x, y, tracked_objects)
+
+        if clicked_obj and distance(clicked_obj.estimate, [x, y]) < threshold:
+            transition_to_locked_mode(clicked_obj)
+```
+
+#### 6.9.3 Automatic Selection (Center Object)
+```python
+# Select object closest to frame center
+center_x, center_y = frame_width / 2, frame_height / 2
+center_obj = min(
+    tracked_objects,
+    key=lambda obj: distance(obj.estimate[0], [center_x, center_y])
+)
+```
+
+### 6.10 Tracking Quality Metrics
+
+#### 6.10.1 Norfair Tracking Quality
+- **Track Age**: Number of frames object has been tracked
+- **Hit Ratio**: Detections / total frames
+- **Position Stability**: Variance of position over time
+
+#### 6.10.2 CSRT Tracking Quality
+Monitor these indicators:
+```python
+# Check bbox validity
+def is_bbox_valid(bbox, frame_shape):
+    x, y, w, h = bbox
+
+    # Check if bbox is within frame
+    if x < 0 or y < 0 or x + w > frame_shape[1] or y + h > frame_shape[0]:
+        return False
+
+    # Check if bbox is reasonable size
+    area = w * h
+    frame_area = frame_shape[0] * frame_shape[1]
+
+    if area < 100 or area > frame_area * 0.8:
+        return False
+
+    return True
+
+# Confidence heuristic (not provided by CSRT)
+def estimate_confidence(bbox, bbox_history, frame):
+    # Track bbox size consistency
+    size_variance = calculate_size_variance(bbox_history)
+
+    # Track position smoothness
+    position_variance = calculate_position_variance(bbox_history)
+
+    # Combined confidence
+    confidence = 1.0 - (size_variance + position_variance) / 2
+    return max(0.0, min(1.0, confidence))
+```
+
+### 6.11 Data Structures
+
+#### 6.11.1 Tracking State
+```python
+tracking_state = {
+    'mode': 'DETECTION_MODE',  # or 'LOCKED_MODE', 'LOST', 'RECOVERING'
+    'norfair_tracker': tracker,
+    'csrt_tracker': None,
+    'selected_object': None,
+    'tracked_objects': [],     # Norfair tracked objects
+    'locked_bbox': None,       # CSRT bbox
+    'frames_since_lock': 0,
+    'frames_lost': 0,
+    'recovery_start_time': None,
+    'last_known_position': None,
+    'last_known_size': None,
+}
+```
+
+#### 6.11.2 Detection Object (for Norfair)
+```python
+detection = {
+    'points': np.array([[x, y]]),  # Centroid
+    'scores': np.array([conf]),    # Confidence
+    'data': {
+        'bbox': (x, y, w, h),
+        'area': w * h,
+        'contour': contour
+    }
+}
+```
+
+#### 6.11.3 Tracked Object Info
+```python
+tracked_info = {
+    'id': track_id,
+    'position': (x, y),
+    'bbox': (x, y, w, h),
+    'age': frames_tracked,
+    'last_detection_frame': frame_number,
+    'velocity': (vx, vy),
+    'is_active': bool
+}
+```
 
 ---
 
@@ -1300,21 +1623,22 @@ For each frame:
 
 ### 15.2 Keyboard Controls
 - **Space**: Pause/resume playback
-- **R**: Reset tracking and PTZ to defaults
+- **R**: Release lock (return to detection mode) and reset PTZ
 - **B**: Reset background model
 - **D**: Toggle debug mosaic view
 - **Q/Esc**: Quit application
-- **S**: Save current frame as image
-- **+/-**: Manually adjust zoom level
-- **Arrow Keys**: Manually adjust pan/tilt (when in manual mode)
-- **M**: Toggle between auto and manual PTZ mode
-- **O**: Toggle overlays on/off
-- **F**: Toggle fullscreen mode
+- **S**: Save current frame as image (optional)
+- **+/-**: Manually adjust zoom level (optional)
+- **Arrow Keys**: Manually adjust pan/tilt (when in manual mode, optional)
+- **M**: Toggle between auto and manual PTZ mode (optional)
+- **O**: Toggle overlays on/off (optional)
+- **F**: Toggle fullscreen mode (optional)
 
-### 15.3 Mouse Controls (Optional)
-- **Left Click**: Select object to track manually
-- **Right Click**: Reset PTZ to clicked position
-- **Mouse Wheel**: Adjust zoom level
+### 15.3 Mouse Controls
+- **Left Click**: Select and lock onto object (transitions from DETECTION_MODE to LOCKED_MODE)
+  - Click near a tracked object (within 50 pixels)
+  - Object will be locked using CSRT tracker
+  - Green bounding box indicates locked object
 
 ### 15.4 Status Display
 Real-time information shown in overlay:
@@ -1520,18 +1844,49 @@ ptz_state = {
 }
 ```
 
-**Step 6: Initialize Tracking State**
+**Step 6: Initialize Trackers**
 ```
+from norfair import Detection, Tracker
+from norfair.distances import euclidean_distance
+
+# Initialize Norfair tracker for detection mode
+norfair_tracker = Tracker(
+    distance_function=euclidean_distance,
+    distance_threshold=50,
+    hit_counter_max=10,
+    initialization_delay=3,
+    pointwise_hit_counter_max=4
+)
+
+# CSRT tracker (initialized later when object is selected)
+csrt_tracker = None
+
+# Tracking state
 tracking_state = {
-    'status': 'IDLE',  # IDLE, ACQUIRING, TRACKING, LOST, RECOVERING
-    'target': None,
-    'frames_tracked': 0,
+    'mode': 'DETECTION_MODE',  # DETECTION_MODE, LOCKED_MODE, LOST, RECOVERING
+    'norfair_tracker': norfair_tracker,
+    'csrt_tracker': None,
+    'selected_object_id': None,
+    'locked_bbox': None,
+    'frames_since_lock': 0,
     'frames_lost': 0,
-    'confidence': 0.0
+    'last_known_position': None,
+    'last_known_size': None,
 }
 ```
 
-**Step 7: Initialize Video Writer** (if saving output)
+**Step 7: Setup Mouse Callback** (for manual selection)
+```
+def on_mouse_click(event, x, y, flags, param):
+    if event == cv2.EVENT_LBUTTONDOWN:
+        param['click_pos'] = (x, y)
+        param['click_flag'] = True
+
+mouse_params = {'click_pos': None, 'click_flag': False}
+cv2.setMouseCallback('PTZ Tracking', on_mouse_click, mouse_params)
+```
+
+**Step 8: Initialize Video Writer** (if saving output)
 ```
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter(
@@ -1542,9 +1897,10 @@ out = cv2.VideoWriter(
 )
 ```
 
-**Step 8: Create Display Window**
+**Step 9: Create Display Window**
 ```
 cv2.namedWindow('PTZ Tracking', cv2.WINDOW_NORMAL)
+cv2.setMouseCallback('PTZ Tracking', on_mouse_click, mouse_params)
 ```
 
 #### 19.1.2 Main Processing Loop
@@ -1639,37 +1995,188 @@ while True:
             'area': area
         })
 
-    # Select best object (largest area strategy)
-    target_object = None
-    if valid_objects:
-        target_object = max(valid_objects, key=lambda obj: obj['area'])
+    # STEP 6: Update Trackers (Dual Mode)
 
-    # STEP 6: Update Tracking State
-    if target_object is not None:
-        if tracking_state['status'] == 'IDLE':
-            tracking_state['status'] = 'ACQUIRING'
-            tracking_state['frames_tracked'] = 1
-        elif tracking_state['status'] == 'ACQUIRING':
-            tracking_state['frames_tracked'] += 1
-            if tracking_state['frames_tracked'] >= acquisition_threshold:
-                tracking_state['status'] = 'TRACKING'
-        elif tracking_state['status'] in ['TRACKING', 'LOST']:
-            tracking_state['status'] = 'TRACKING'
+    current_bbox = None  # Will be set based on tracking mode
+
+    if tracking_state['mode'] == 'DETECTION_MODE':
+        # DETECTION MODE: Use Norfair for multi-object tracking
+
+        # Create Norfair detections from valid objects
+        detections = []
+        for obj in valid_objects:
+            cx, cy = obj['centroid']
+            detection = Detection(
+                points=np.array([[cx, cy]]),
+                scores=np.array([1.0]),  # Confidence score
+                data={'bbox': obj['bbox'], 'area': obj['area']}
+            )
+            detections.append(detection)
+
+        # Update Norfair tracker
+        tracked_objects = norfair_tracker.update(detections=detections)
+
+        # Draw all tracked objects (multi-object visualization)
+        for tracked_obj in tracked_objects:
+            if tracked_obj.last_detection is not None:
+                bbox = tracked_obj.last_detection.data.get('bbox')
+                if bbox:
+                    x, y, w, h = bbox
+                    # Draw cyan boxes for all tracked objects
+                    cv2.rectangle(original_frame, (x, y), (x+w, y+h), (255, 255, 0), 2)
+                    # Draw track ID
+                    cv2.putText(original_frame, f"ID:{tracked_obj.id}", (x, y-10),
+                              cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+
+        # Check for object selection (mouse click or automatic)
+        if mouse_params['click_flag']:
+            click_x, click_y = mouse_params['click_pos']
+            mouse_params['click_flag'] = False
+
+            # Find closest tracked object to click
+            min_dist = float('inf')
+            selected_obj = None
+
+            for tracked_obj in tracked_objects:
+                if tracked_obj.last_detection is not None:
+                    pos = tracked_obj.estimate[0]
+                    dist = np.sqrt((pos[0] - click_x)**2 + (pos[1] - click_y)**2)
+                    if dist < min_dist and dist < 50:  # 50 pixel tolerance
+                        min_dist = dist
+                        selected_obj = tracked_obj
+
+            # Transition to LOCKED_MODE
+            if selected_obj and selected_obj.last_detection is not None:
+                bbox = selected_obj.last_detection.data.get('bbox')
+                if bbox:
+                    # Initialize CSRT tracker
+                    csrt_tracker = cv2.TrackerCSRT_create()
+                    success = csrt_tracker.init(original_frame, bbox)
+
+                    if success:
+                        tracking_state['mode'] = 'LOCKED_MODE'
+                        tracking_state['csrt_tracker'] = csrt_tracker
+                        tracking_state['selected_object_id'] = selected_obj.id
+                        tracking_state['locked_bbox'] = bbox
+                        tracking_state['frames_since_lock'] = 0
+                        tracking_state['last_known_position'] = (bbox[0] + bbox[2]/2, bbox[1] + bbox[3]/2)
+                        tracking_state['last_known_size'] = (bbox[2], bbox[3])
+                        print(f"[TRACKING] Locked onto object ID: {selected_obj.id}")
+
+        # Select largest object for PTZ control (even in detection mode)
+        if tracked_objects:
+            largest_obj = None
+            max_area = 0
+            for tracked_obj in tracked_objects:
+                if tracked_obj.last_detection is not None:
+                    area = tracked_obj.last_detection.data.get('area', 0)
+                    if area > max_area:
+                        max_area = area
+                        largest_obj = tracked_obj
+
+            if largest_obj and largest_obj.last_detection is not None:
+                current_bbox = largest_obj.last_detection.data.get('bbox')
+
+    elif tracking_state['mode'] == 'LOCKED_MODE':
+        # LOCKED MODE: Use CSRT for single-object tracking
+
+        csrt_tracker = tracking_state['csrt_tracker']
+        success, bbox = csrt_tracker.update(original_frame)
+
+        if success:
+            # CSRT tracking successful
+            x, y, w, h = map(int, bbox)
+
+            # Validate bbox
+            if (x >= 0 and y >= 0 and
+                x + w <= frame_width and y + h <= frame_height and
+                w * h >= 100 and w * h <= frame_width * frame_height * 0.8):
+
+                current_bbox = (x, y, w, h)
+                tracking_state['locked_bbox'] = current_bbox
+                tracking_state['frames_since_lock'] += 1
+                tracking_state['frames_lost'] = 0
+                tracking_state['last_known_position'] = (x + w/2, y + h/2)
+                tracking_state['last_known_size'] = (w, h)
+
+                # Draw green box for locked object
+                cv2.rectangle(original_frame, (x, y), (x+w, y+h), (0, 255, 0), 3)
+                cv2.putText(original_frame, "LOCKED", (x, y-10),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            else:
+                # Invalid bbox - tracking lost
+                tracking_state['mode'] = 'LOST'
+                tracking_state['frames_lost'] = 0
+                print("[TRACKING] CSRT lost: Invalid bbox")
+        else:
+            # CSRT tracking failed
+            tracking_state['mode'] = 'LOST'
             tracking_state['frames_lost'] = 0
+            print("[TRACKING] CSRT lost: Tracking failure")
 
-        tracking_state['target'] = target_object
-        tracking_state['confidence'] = min(1.0, tracking_state['frames_tracked'] / 30.0)
-    else:
-        if tracking_state['status'] == 'TRACKING':
-            tracking_state['frames_lost'] += 1
-            if tracking_state['frames_lost'] >= lost_threshold:
-                tracking_state['status'] = 'LOST'
-        elif tracking_state['status'] in ['ACQUIRING', 'LOST']:
-            tracking_state['status'] = 'IDLE'
+    elif tracking_state['mode'] == 'LOST':
+        # LOST MODE: Attempt recovery using background subtraction
+
+        tracking_state['frames_lost'] += 1
+
+        if tracking_state['frames_lost'] <= lost_frames_threshold:
+            # Search for object near last known position
+            last_pos = tracking_state['last_known_position']
+            last_size = tracking_state['last_known_size']
+
+            if last_pos and last_size:
+                search_radius = 150
+                best_match = None
+                best_score = 0
+
+                for obj in valid_objects:
+                    cx, cy = obj['centroid']
+                    x, y, w, h = obj['bbox']
+
+                    # Distance from last position
+                    dist = np.sqrt((cx - last_pos[0])**2 + (cy - last_pos[1])**2)
+
+                    # Size similarity
+                    size_ratio = min(w/last_size[0], last_size[0]/w) * min(h/last_size[1], last_size[1]/h)
+
+                    # Combined score
+                    if dist < search_radius:
+                        score = size_ratio * (1 - dist / search_radius)
+                        if score > best_score and size_ratio > 0.5:
+                            best_score = score
+                            best_match = obj
+
+                if best_match and best_score > 0.5:
+                    # Reacquired! Reinitialize CSRT
+                    bbox = best_match['bbox']
+                    csrt_tracker = cv2.TrackerCSRT_create()
+                    success = csrt_tracker.init(original_frame, bbox)
+
+                    if success:
+                        tracking_state['mode'] = 'LOCKED_MODE'
+                        tracking_state['csrt_tracker'] = csrt_tracker
+                        tracking_state['locked_bbox'] = bbox
+                        tracking_state['frames_lost'] = 0
+                        print(f"[TRACKING] Reacquired object!")
+
+                # Draw search area
+                lx, ly = int(last_pos[0]), int(last_pos[1])
+                cv2.circle(original_frame, (lx, ly), search_radius, (0, 0, 255), 2)
+                cv2.putText(original_frame, "SEARCHING...", (lx-50, ly-search_radius-10),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        else:
+            # Recovery timeout - return to detection mode
+            tracking_state['mode'] = 'DETECTION_MODE'
+            tracking_state['csrt_tracker'] = None
+            tracking_state['selected_object_id'] = None
+            tracking_state['locked_bbox'] = None
+            print("[TRACKING] Recovery timeout - returning to DETECTION_MODE")
 
     # STEP 7: Calculate PTZ Adjustments
-    if tracking_state['status'] == 'TRACKING' and target_object:
-        cx, cy = target_object['centroid']
+    if current_bbox is not None:
+        x, y, w, h = current_bbox
+        cx = x + w / 2
+        cy = y + h / 2
 
         # Calculate error from center
         error_x = (cx - frame_width / 2) / frame_width
@@ -1800,17 +2307,27 @@ while True:
 
     # STEP 13: Handle User Input
     key = cv2.waitKey(1) & 0xFF
-    if key == ord('q'):
+    if key == ord('q') or key == 27:  # Q or ESC
         break
     elif key == ord(' '):
         cv2.waitKey(0)  # Pause
     elif key == ord('r'):
-        # Reset tracking and PTZ
-        tracking_state['status'] = 'IDLE'
+        # Release lock and return to detection mode
+        if tracking_state['mode'] in ['LOCKED_MODE', 'LOST']:
+            tracking_state['mode'] = 'DETECTION_MODE'
+            tracking_state['csrt_tracker'] = None
+            tracking_state['selected_object_id'] = None
+            tracking_state['locked_bbox'] = None
+            print("[TRACKING] Manually released lock")
+        # Reset PTZ
         ptz_state = {'pan': 0.0, 'tilt': 0.0, 'zoom': 1.0}
     elif key == ord('d'):
         # Toggle debug mosaic
         show_debug_mosaic = not show_debug_mosaic
+    elif key == ord('b'):
+        # Reset background model (if using OpenCV)
+        # bg_subtractor = cv2.createBackgroundSubtractorMOG2(...)
+        pass
 ```
 
 #### 19.1.3 Cleanup Phase

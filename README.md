@@ -7,7 +7,7 @@ A real-time object tracking system using background subtraction and simulated PT
 - **Dual-Mode Tracking System**:
   - **Detection Mode (Norfair)**: Multi-object tracking when no object selected
   - **Locked Mode (CSRT)**: High-accuracy single-object tracking when locked
-- **Background Subtraction**: OpenCV (MOG2, KNN) or BGSLibrary (43+ algorithms)
+- **Background Subtraction**: BGSLibrary with 43+ algorithms (PAWCS, SuBSENSE, ViBe, SigmaDelta, etc.)
 - **Object Detection**: Contour-based detection with filtering
 - **Virtual PTZ**: Simulated pan, tilt, and zoom on video files
 - **Real-time Visualization**: Multi-object boxes (cyan) in detection mode, locked object (green)

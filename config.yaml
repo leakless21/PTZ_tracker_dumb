@@ -11,15 +11,20 @@ video:
 
 # Background Subtraction
 background_subtraction:
-  library: "opencv"  # Options: opencv, bgslibrary
-  algorithm: "MOG2"  # OpenCV: MOG2, KNN, MOG, GMG, CNT | BGSLibrary: FrameDifference, ViBe, SuBSENSE, PAWCS, etc.
+  library: "bgslibrary"  # Options: bgslibrary (recommended), opencv (legacy)
+  algorithm: "PAWCS"  # BGSLibrary: PAWCS (default), SuBSENSE, ViBe, SigmaDelta, LOBSTER, FrameDifference, etc.
+                      # OpenCV (legacy): MOG2, KNN, MOG, GMG, CNT
 
-  # OpenCV-specific parameters
-  history: 500
-  var_threshold: 16.0  # For MOG2
-  dist2_threshold: 400.0  # For KNN
-  detect_shadows: true
-  learning_rate: -1  # -1 for automatic, or 0.001-0.1
+  # Note: BGSLibrary algorithms are pre-configured with optimal parameters
+  # No need to specify history, variance thresholds, or learning rates
+
+  # OpenCV-specific parameters (only used if library="opencv")
+  opencv:
+    history: 500
+    var_threshold: 16.0  # For MOG2
+    dist2_threshold: 400.0  # For KNN
+    detect_shadows: true
+    learning_rate: -1  # -1 for automatic, or 0.001-0.1
 
 # Foreground Mask Post-Processing
 # Pipeline: Erosion -> Dilation -> Gaussian Blur -> Closing -> Threshold

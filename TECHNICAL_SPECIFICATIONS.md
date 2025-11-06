@@ -370,157 +370,227 @@ system:
 
 ### 5.1 Library Selection
 
-#### 5.1.1 OpenCV Built-in Algorithms (Primary)
-OpenCV provides efficient built-in background subtraction classes:
-- **cv2.createBackgroundSubtractorMOG2()**: Gaussian Mixture Model (recommended)
-- **cv2.createBackgroundSubtractorKNN()**: K-Nearest Neighbors based
-- **cv2.bgsegm.createBackgroundSubtractorMOG()**: Original MOG (legacy)
-- **cv2.bgsegm.createBackgroundSubtractorGMG()**: Geometric multigrid
-- **cv2.bgsegm.createBackgroundSubtractorCNT()**: Counting-based
+#### 5.1.1 BGSLibrary (Primary - Recommended)
+**Installation**: `pip install pybgs` or `pixi add --pypi pybgs`
 
-#### 5.1.2 BGSLibrary (Advanced Option)
-Install via: `pip install pybgs`
+BGSLibrary provides 43+ advanced background subtraction algorithms optimized for various scenarios:
 
-BGSLibrary provides 43+ advanced algorithms including:
-- **FrameDifference**: Simple frame differencing baseline
+**Recommended Algorithms:**
+- **SuBSENSE**: Self-Balanced Sensitivity Segmenter (state-of-the-art accuracy)
+- **PAWCS**: Pixel-based Adaptive Word Consensus Segmenter (excellent for dynamic backgrounds)
+- **ViBe**: Visual Background Extractor (good balance of speed and accuracy)
+- **SigmaDelta**: Sigma-delta filter based (good for camouflage and gradual changes)
+- **LOBSTER**: LOcal Binary SimiLarity segmenTER (robust to illumination changes)
+
+**Additional Algorithms:**
+- **FrameDifference**: Simple frame differencing baseline (fastest, for testing)
 - **StaticFrameDifference**: For static camera scenarios
 - **AdaptiveBackgroundLearning**: Adaptive learning rate
 - **CodeBook**: Codebook-based algorithm
 - **KDE**: Kernel Density Estimation
 - **MixtureOfGaussianV2**: Enhanced MOG2 variant
-- **PAWCS**: Pixel-based Adaptive Word Consensus Segmenter
-- **SigmaDelta**: Sigma-delta filter based
-- **ViBe**: Visual Background Extractor
-- **SuBSENSE**: Self-Balanced Sensitivity Segmenter (state-of-the-art)
 - **LBSP**: Local Binary Similarity Pattern
 - **MultiLayer**: Multi-layer background subtraction
 - **T2FGMM_UM**: Type-2 Fuzzy Gaussian Mixture Model
 - **T2FGMM_UV**: Type-2 Fuzzy with UV adaptation
+- **WeightedMovingMean**: Simple moving average
+- **WeightedMovingVariance**: Variance-based detection
+
+#### 5.1.2 OpenCV Built-in Algorithms (Optional/Legacy)
+OpenCV provides basic background subtraction classes:
+- **cv2.createBackgroundSubtractorMOG2()**: Gaussian Mixture Model
+- **cv2.createBackgroundSubtractorKNN()**: K-Nearest Neighbors based
+- **cv2.bgsegm.createBackgroundSubtractorMOG()**: Original MOG (legacy)
+- **cv2.bgsegm.createBackgroundSubtractorGMG()**: Geometric multigrid
+- **cv2.bgsegm.createBackgroundSubtractorCNT()**: Counting-based
+
+**Note**: OpenCV algorithms are maintained for compatibility, but BGSLibrary is recommended for better performance and more algorithm choices.
 
 ### 5.2 Algorithm Selection Strategy
-- **Default**: OpenCV's MOG2 (best balance of speed and accuracy)
-- **High Accuracy**: bgslibrary's SuBSENSE or PAWCS
-- **High Speed**: FrameDifference or simple MOG
-- **Outdoor/Dynamic Lighting**: PAWCS, SigmaDelta
-- **Indoor/Static Lighting**: MOG2, KNN
-- **Minimal Resources**: FrameDifference, StaticFrameDifference
+- **Default**: BGSLibrary's **PAWCS** (best balance of speed and accuracy)
+- **High Accuracy**: **SuBSENSE** or **LOBSTER**
+- **High Speed**: **FrameDifference** or **ViBe**
+- **Outdoor/Dynamic Lighting**: **PAWCS** or **SigmaDelta**
+- **Indoor/Static Lighting**: **ViBe** or **CodeBook**
+- **Minimal Resources**: **FrameDifference** or **StaticFrameDifference**
+- **Complex Scenes**: **SuBSENSE** or **MultiLayer**
 
-### 5.3 OpenCV MOG2 Implementation Details
+### 5.3 BGSLibrary Implementation Details
 
-#### 5.3.1 Initialization
-Function: `cv2.createBackgroundSubtractorMOG2(history, varThreshold, detectShadows)`
+#### 5.3.1 Installation and Import
+**Installation**:
+```bash
+# Using pip
+pip install pybgs
 
-#### 5.3.2 Parameters
+# Using Pixi (recommended)
+pixi add --pypi pybgs
+```
+
+**Import**:
+```python
+import pybgs
+```
+
+#### 5.3.2 Initialization
+General pattern: `algorithm = pybgs.AlgorithmName()`
+
+**Examples**:
+```python
+# Recommended: PAWCS (default)
+bgs = pybgs.PAWCS()
+
+# High accuracy: SuBSENSE
+bgs = pybgs.SuBSENSE()
+
+# Balanced: ViBe
+bgs = pybgs.ViBe()
+
+# Fast: FrameDifference
+bgs = pybgs.FrameDifference()
+
+# Dynamic lighting: SigmaDelta
+bgs = pybgs.SigmaDelta()
+
+# Robust: LOBSTER
+bgs = pybgs.LOBSTER()
+```
+
+#### 5.3.3 Application Method
+**Function**: `foreground_mask = algorithm.apply(frame)`
+
+**Parameters**:
+- **Input**: Frame as NumPy array (BGR format, same as cv2.imread)
+- **Output**: Binary foreground mask (uint8)
+  - 0 (black): Background
+  - 255 (white): Foreground
+
+**Example**:
+```python
+# Initialize algorithm
+bgs = pybgs.PAWCS()
+
+# Apply to frame
+fg_mask = bgs.apply(frame)
+
+# fg_mask is now a binary mask ready for contour detection
+```
+
+**Important Notes**:
+- BGSLibrary algorithms do NOT have a learningRate parameter (unlike OpenCV)
+- Learning rate is handled internally by each algorithm
+- No need to specify history or variance thresholds
+- Algorithms are pre-configured with optimal parameters
+
+#### 5.3.4 Complete Algorithm List
+
+**Simple/Fast Algorithms:**
+- `pybgs.FrameDifference()` - Simple frame differencing (fastest)
+- `pybgs.StaticFrameDifference()` - For static camera
+- `pybgs.WeightedMovingMean()` - Moving average
+- `pybgs.WeightedMovingVariance()` - Variance-based
+
+**Statistical Algorithms:**
+- `pybgs.AdaptiveBackgroundLearning()` - Adaptive learning
+- `pybgs.AdaptiveSelectiveBackgroundLearning()` - Selective adaptation
+- `pybgs.MixtureOfGaussianV1()` - Original MOG
+- `pybgs.MixtureOfGaussianV2()` - Enhanced MOG2
+- `pybgs.KNN()` - K-Nearest Neighbors
+
+**Advanced/Robust Algorithms:**
+- `pybgs.CodeBook()` - Codebook algorithm
+- `pybgs.ViBe()` - Visual Background Extractor (recommended)
+- `pybgs.PAWCS()` - Pixel Adaptive Word Consensus (recommended, default)
+- `pybgs.SuBSENSE()` - Self-Balanced Sensitivity (highest accuracy)
+- `pybgs.LOBSTER()` - Local Binary Similarity
+- `pybgs.SigmaDelta()` - Sigma-delta filter
+- `pybgs.T2FGMM_UM()` - Type-2 Fuzzy GMM
+- `pybgs.T2FGMM_UV()` - Type-2 Fuzzy with UV
+
+**Special Purpose:**
+- `pybgs.MultiLayer()` - Multi-layer scenes
+- `pybgs.KDE()` - Kernel Density Estimation
+- `pybgs.LBP_MRF()` - LBP with Markov Random Field
+- `pybgs.FuzzySugenoIntegral()` - Fuzzy integration
+- `pybgs.FuzzyChoquetIntegral()` - Fuzzy integration
+
+#### 5.3.5 Algorithm Characteristics
+
+**PAWCS (Default Recommended)**:
+- Excellent performance in dynamic scenes
+- Handles illumination changes well
+- Good speed/accuracy balance
+- Pixel-based adaptive processing
+
+**SuBSENSE (Highest Accuracy)**:
+- State-of-the-art accuracy
+- Self-balanced sensitivity
+- Good for challenging scenarios
+- Slower than PAWCS but more accurate
+
+**ViBe (Balanced)**:
+- Fast initialization (single frame)
+- Good accuracy for most scenarios
+- Low computational cost
+- Random sampling approach
+
+**SigmaDelta (Illumination Robust)**:
+- Excellent for gradual lighting changes
+- Good for outdoor scenes
+- Handles shadows well
+- Stable over long periods
+
+**FrameDifference (Testing/Baseline)**:
+- Fastest algorithm
+- Minimal memory usage
+- Good for rapid testing
+- Not suitable for static objects
+
+### 5.4 OpenCV Implementation Details (Optional/Legacy)
+
+#### 5.4.1 OpenCV MOG2 (If using OpenCV instead)
+**Initialization**:
+```python
+bg_subtractor = cv2.createBackgroundSubtractorMOG2(
+    history=500,
+    varThreshold=16,
+    detectShadows=True
+)
+```
+
+**Application**:
+```python
+fg_mask = bg_subtractor.apply(frame, learningRate=-1)
+```
+
+**Parameters**:
 - **history**: Number of last frames affecting background model (default: 500)
-- **detectShadows**: Enable/disable shadow detection (default: true)
-- **shadowValue**: Value used to mark shadows in output (default: 127)
-- **shadowThreshold**: Shadow detection threshold (default: 0.5)
+- **varThreshold**: Threshold on squared Mahalanobis distance (default: 16)
+- **detectShadows**: Enable/disable shadow detection (default: True)
 - **learningRate**: Background model update rate (default: -1 for automatic)
   - Range: -1 (automatic), 0.0 (no learning) to 1.0 (complete replacement)
   - Recommended: 0.001 to 0.01 for slow learning, 0.05 to 0.1 for fast adaptation
-- **varThreshold**: Threshold on squared Mahalanobis distance (default: 16)
-  - Lower values: More sensitive (more foreground pixels)
-  - Higher values: Less sensitive (fewer foreground pixels)
-  - Recommended range: 9 to 25
 
-#### 5.3.3 Application Method
-Function: `foreground_mask = background_subtractor.apply(frame, learningRate)`
-- **Input**: Current frame (BGR or grayscale)
-- **Output**: Foreground mask (grayscale image)
-  - 0 (black): Background
-  - 255 (white): Foreground
-  - 127 (gray): Shadow (if detectShadows=True)
-- **learningRate parameter**: Can be overridden per frame
+#### 5.4.2 OpenCV KNN (If using OpenCV instead)
+**Initialization**:
+```python
+bg_subtractor = cv2.createBackgroundSubtractorKNN(
+    history=500,
+    dist2Threshold=400.0,
+    detectShadows=True
+)
+```
 
-#### 5.3.4 Additional Methods
-- `getBackgroundImage()`: Returns current background model image
-- `setHistory(frames)`: Update history parameter
-- `setVarThreshold(threshold)`: Update variance threshold
-- `setDetectShadows(boolean)`: Enable/disable shadow detection
-- `setShadowValue(value)`: Set shadow pixel value
-- `setShadowThreshold(threshold)`: Set shadow detection sensitivity
+**Application**:
+```python
+fg_mask = bg_subtractor.apply(frame, learningRate=-1)
+```
 
-### 5.4 OpenCV KNN Implementation Details
+**KNN vs MOG2**:
+- KNN: Better for scenes with rapid changes, less memory
+- MOG2: Better shadow detection, more stable in static scenes
 
-#### 5.4.1 Initialization
-Function: `cv2.createBackgroundSubtractorKNN(history, dist2Threshold, detectShadows)`
-
-#### 5.4.2 Parameters
-- **history**: Number of frames for background model (default: 500)
-- **dist2Threshold**: Squared Euclidean distance threshold (default: 400.0)
-  - Lower values: More foreground pixels
-  - Higher values: Fewer foreground pixels
-  - Recommended range: 200 to 800
-- **detectShadows**: Enable shadow detection (default: True)
-
-#### 5.4.3 Application Method
-Same as MOG2: `foreground_mask = background_subtractor.apply(frame, learningRate)`
-
-#### 5.4.4 KNN vs MOG2 Comparison
-- **KNN Advantages**: Better for scenes with rapid changes, less memory
-- **MOG2 Advantages**: Better shadow detection, more stable in static scenes
-- **Performance**: KNN typically faster than MOG2
-
-### 5.5 BGSLibrary Implementation Details
-
-#### 5.5.1 Installation and Import
-Installation: `pip install pybgs`
-Import: `import pybgs`
-
-#### 5.5.2 Initialization
-General pattern: `algorithm = pybgs.AlgorithmName()`
-
-Examples:
-- `bgs = pybgs.FrameDifference()`
-- `bgs = pybgs.MixtureOfGaussianV2()`
-- `bgs = pybgs.SuBSENSE()`
-- `bgs = pybgs.PAWCS()`
-- `bgs = pybgs.ViBe()`
-- `bgs = pybgs.SigmaDelta()`
-
-#### 5.5.3 Application Method
-Function: `foreground_mask = algorithm.apply(frame)`
-- **Input**: Frame as NumPy array (BGR format)
-- **Output**: Binary foreground mask (0=background, 255=foreground)
-
-#### 5.5.4 Available Algorithms List
-**Simple Algorithms:**
-- FrameDifference
-- StaticFrameDifference
-- WeightedMovingMean
-- WeightedMovingVariance
-
-**Statistical Algorithms:**
-- AdaptiveBackgroundLearning
-- AdaptiveSelectiveBackgroundLearning
-- MixtureOfGaussianV1
-- MixtureOfGaussianV2
-- KNN
-
-**Advanced Algorithms:**
-- CodeBook
-- ViBe (Visual Background Extractor)
-- PAWCS (Pixel-based Adaptive Word Consensus Segmenter)
-- SuBSENSE (Self-Balanced Sensitivity Segmenter)
-- LOBSTER (LOcal Binary SimiLarity segmenTER)
-- SigmaDelta
-- T2FGMM (Type-2 Fuzzy Gaussian Mixture Model)
-
-**Special Purpose:**
-- MultiLayer (for multi-layer scenes)
-- KDE (Kernel Density Estimation)
-- LBP_MRF (Local Binary Pattern with Markov Random Field)
-- FuzzySugenoIntegral
-- FuzzyChoquetIntegral
-
-#### 5.5.5 Algorithm Selection Guidelines
-- **FrameDifference**: Fastest, minimal memory, good for testing
-- **ViBe**: Good balance of speed and accuracy
-- **SuBSENSE**: Best accuracy, slower, good for challenging scenes
-- **PAWCS**: Excellent for dynamic backgrounds
-- **SigmaDelta**: Good for camouflage and gradual changes
-
-### 5.6 Background Model Management
+### 5.5 Background Model Management
 - **Initialization Phase**: First N frames used to build initial model (N = 30-120)
 - **Update Strategy**: Continuous online update or periodic reset
 - **Learning Rate Adaptation**:
@@ -532,7 +602,7 @@ Function: `foreground_mask = algorithm.apply(frame)`
   - Automatic reset when tracking is lost for >T seconds
   - Scene change detection (average pixel change > threshold)
 
-### 5.7 Foreground Mask Post-Processing (OpenCV)
+### 5.6 Foreground Mask Post-Processing (OpenCV)
 
 This is the recommended pipeline for cleaning the foreground mask:
 
@@ -2065,22 +2135,26 @@ Provide test videos covering:
 
 ---
 
-## 20. OPENCV/BGSLIBRARY IMPLEMENTATION WORKFLOW
+## 20. BGSLIBRARY IMPLEMENTATION WORKFLOW
 
-### 20.1 Complete Pipeline with OpenCV
+### 20.1 Complete Pipeline with BGSLibrary
 
-This section provides the detailed step-by-step workflow for implementing the system using OpenCV.
+This section provides the detailed step-by-step workflow for implementing the system using BGSLibrary.
 
 #### 20.1.1 Initialization Phase
 
 **Step 1: Import Libraries**
-```
-Required imports:
-- import cv2
-- import numpy as np
-- import time (for FPS calculation)
-- import json or yaml (for configuration)
-- Optional: import pybgs (if using bgslibrary)
+```python
+# Required imports
+import cv2                # For video I/O and image processing
+import numpy as np        # For array operations
+import pybgs              # For background subtraction (BGSLibrary)
+import time               # For FPS calculation and timing
+import yaml               # For configuration file loading
+
+# For tracking
+from norfair import Detection, Tracker
+from norfair.distances import euclidean_distance
 ```
 
 **Step 2: Load Configuration**
@@ -2101,29 +2175,36 @@ Get properties:
 
 **Step 4: Initialize Background Subtractor**
 
-*Option A: OpenCV MOG2*
+*Primary Option: BGSLibrary (Recommended)*
+```python
+import pybgs
+
+# Default: PAWCS (best balance of speed and accuracy)
+bg_subtractor = pybgs.PAWCS()
+
+# Alternative algorithms:
+# bg_subtractor = pybgs.SuBSENSE()        # Highest accuracy
+# bg_subtractor = pybgs.ViBe()            # Balanced
+# bg_subtractor = pybgs.SigmaDelta()      # Good for lighting changes
+# bg_subtractor = pybgs.LOBSTER()         # Robust
+# bg_subtractor = pybgs.FrameDifference() # Fastest (testing only)
 ```
+
+*Legacy Option: OpenCV (if needed)*
+```python
+# OpenCV MOG2
 bg_subtractor = cv2.createBackgroundSubtractorMOG2(
     history=500,
     varThreshold=16,
     detectShadows=True
 )
-```
 
-*Option B: OpenCV KNN*
-```
-bg_subtractor = cv2.createBackgroundSubtractorKNN(
-    history=500,
-    dist2Threshold=400.0,
-    detectShadows=True
-)
-```
-
-*Option C: BGSLibrary*
-```
-import pybgs
-bg_subtractor = pybgs.FrameDifference()
-# or pybgs.SuBSENSE(), pybgs.PAWCS(), etc.
+# Or OpenCV KNN
+# bg_subtractor = cv2.createBackgroundSubtractorKNN(
+#     history=500,
+#     dist2Threshold=400.0,
+#     detectShadows=True
+# )
 ```
 
 **Step 5: Initialize System State**
@@ -2215,10 +2296,11 @@ while True:
     original_frame = frame.copy()  # Keep original for display
 
     # STEP 2: Background Subtraction
-    # For OpenCV:
-    fg_mask = bg_subtractor.apply(frame, learningRate=0.01)
-    # For bgslibrary:
-    # fg_mask = bg_subtractor.apply(frame)
+    # For BGSLibrary (default):
+    fg_mask = bg_subtractor.apply(frame)
+
+    # For OpenCV (legacy):
+    # fg_mask = bg_subtractor.apply(frame, learningRate=0.01)
 
     # STEP 3: Post-process Foreground Mask
     # Save intermediate stages for debug mosaic

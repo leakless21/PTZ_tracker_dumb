@@ -1,434 +1,232 @@
 # PTZ Camera Object Tracking System - Technical Specifications
 
+**Version:** 2.0 (Simplified)
+**Date:** November 7, 2025
+**Status:** Implementation Ready
+
+---
+
 ## 1. PROJECT OVERVIEW
 
 ### 1.1 Purpose
 
-A real-time object tracking system that uses background subtraction for object detection and simulated PTZ (Pan-Tilt-Zoom) camera control to keep detected objects centered in the video frame.
+A clean, minimal PTZ object tracking system that:
+- Detects multiple moving objects using background subtraction
+- Allows user to select an object by ID
+- Tracks selected object with high accuracy
+- Applies virtual PTZ control to keep object centered
 
 ### 1.2 Scope
 
-- Process pre-recorded video files with simulated PTZ control
-- Detect moving objects using background subtraction
-- Track detected objects and adjust virtual camera position
-- Simulate pan, tilt, and zoom operations on video
-- Provide real-time visualization of tracking performance
+**MVP Features:**
+- Multi-object detection with ID assignment
+- Manual object selection (press 0-9 for ID)
+- Single-object high-accuracy tracking
+- Virtual PTZ (pan, tilt, zoom) control
+- Debug mosaic visualization (2×4 grid)
+- Video input/output
+- Keyboard controls
 
-### 1.3 Key Constraints
+**Out of Scope for MVP:**
+- Deep learning detection
+- Physical PTZ camera control
+- Real-time camera streams (file input only)
+- Extensive telemetry and analytics
 
-- Use background subtraction (not deep learning) for object detection
-- Simulate PTZ control on existing video (no physical camera)
-- Real-time or near real-time processing capability
-- Single object tracking (extensible to multiple objects)
+### 1.3 Design Principles
+
+- **YAGNI**: Only implement what's needed now
+- **Simplicity**: 5 files, ~750 lines of code
+- **Clarity**: Each module has single responsibility
+- **Proven patterns**: Use established CV techniques
 
 ---
 
 ## 2. SYSTEM ARCHITECTURE
 
-### 2.1 High-Level Architecture
-
-The system follows a pipeline architecture with the following stages:
-
-1. Video Input Stage
-2. Frame Preprocessing Stage
-3. Background Subtraction Stage
-4. Object Detection & Filtering Stage
-5. Tracking Decision Stage
-6. Virtual PTZ Control Stage
-7. Frame Rendering Stage
-8. Display & Recording Stage
-
-### 2.2 Component Diagram
+### 2.1 Simplified Architecture
 
 ```
-[Video Source]
-    ↓
-[Frame Capture Module]
-    ↓
-[Preprocessing Module] → [Background Model Manager]
-    ↓
-[Background Subtractor]
-    ↓
-[Object Detector] → [Morphological Processor]
-    ↓
-[Object Filter & Selector]
-    ↓
-[Tracking Controller] ← [PTZ State Manager]
-    ↓
-[Virtual PTZ Engine]
-    ↓
-[Frame Renderer] → [Overlay Generator]
-    ↓
-[Display Manager] + [Video Writer]
+┌─────────────────────────────────────────────┐
+│                  main.py                    │
+│  (Video I/O, Main Loop, State Machine, UI)  │
+└─────────────────────────────────────────────┘
+                      │
+        ┌─────────────┼─────────────┬──────────┐
+        │             │             │          │
+┌───────▼────────┐ ┌──▼────────┐ ┌─▼──────┐ ┌─▼──────────┐
+│   tracker.py   │ │  ptz.py   │ │config  │ │debug_view  │
+│ (Detection &   │ │ (PTZ      │ │.yaml   │ │.py         │
+│  Tracking)     │ │  Control) │ │        │ │(Mosaic)    │
+└────────────────┘ └───────────┘ └────────┘ └────────────┘
 ```
+
+**5 Files, ~750 Lines Total**
+
+### 2.2 Module Responsibilities
+
+| Module | Lines | Purpose |
+|--------|-------|---------|
+| **main.py** | ~250 | Video I/O, main loop, state machine, keyboard input, UI coordination |
+| **tracker.py** | ~300 | Background subtraction, Norfair multi-tracking, CSRT single-tracking |
+| **ptz.py** | ~100 | PTZ calculations, ROI extraction, coordinate transformations |
+| **debug_view.py** | ~100 | Debug mosaic creation (2×4 grid of pipeline stages) |
+| **config.yaml** | ~50 | Configuration parameters |
 
 ### 2.3 Data Flow
 
-- Unidirectional flow from video input to display output
-- State feedback loop between Tracking Controller and PTZ State Manager
-- Background model continuously updated by Background Model Manager
+```
+Video Frame
+    │
+    ├──> [DETECTION STATE]
+    │    │
+    │    ├─> Background Subtraction (OpenCV MOG2/KNN)
+    │    ├─> Contour Detection & Filtering
+    │    ├─> Norfair Multi-Object Tracking
+    │    ├─> Display all objects with IDs (cyan boxes)
+    │    └─> Wait for user to press number key (0-9)
+    │
+    ├──> [TRACKING STATE]
+    │    │
+    │    ├─> CSRT/KCF Single-Object Tracking
+    │    ├─> PTZ Control (center object)
+    │    ├─> Display locked object (green box)
+    │    └─> Check tracking success
+    │
+    └──> [LOST STATE]
+         │
+         ├─> Background Subtraction near last position
+         ├─> Attempt redetection (size + position match)
+         ├─> Reinitialize CSRT if found
+         └─> Timeout → return to DETECTION
+```
 
 ---
 
-## 3. SYSTEM STATE MANAGEMENT
+## 3. STATE MANAGEMENT
 
-### 3.1 Overview
+### 3.1 Three-State System
 
-The application operates as a finite state machine with system-wide states that govern the behavior of all modules. The state determines which tracking algorithm is active, what visual feedback is shown, and how user input is processed.
+```python
+class State(Enum):
+    DETECTION = 0   # Multi-object mode (Norfair)
+    TRACKING = 1    # Single-object mode (CSRT/KCF)
+    LOST = 2        # Recovery mode
+```
 
-### 3.2 System States
+### 3.2 State Descriptions
 
-The system has **four primary states**:
+#### DETECTION State
 
-#### 3.2.1 DETECTION_MODE
+**Purpose:** Show all moving objects with persistent IDs
 
-**Purpose**: Multi-object detection and tracking without locking onto a specific object
+**Active Components:**
+- Background Subtraction: ✅ Active
+- Norfair Tracker: ✅ Active
+- CSRT Tracker: ❌ Inactive
 
-**Active Modules**:
+**Visual:**
+- Cyan boxes around all detected objects
+- ID numbers above each box
+- Status: "DETECTION MODE"
 
-- Background Subtraction: Active
-- Object Detection: Active (contour-based)
-- Norfair Tracker: Active (tracking all detected objects)
-- CSRT Tracker: Inactive
-- PTZ Control: Follows largest detected object (for centering)
+**User Actions:**
+- Press 0-9: Lock onto object with that ID → TRACKING
+- Press R: Reset PTZ to center
+- Press Q: Quit
 
-**Visual Indicators**:
+#### TRACKING State
 
-- All tracked objects: Cyan bounding boxes
-- Track IDs: Displayed above each object
-- Status text: "DETECTION MODE"
+**Purpose:** Track selected object with high accuracy
 
-**Transitions From This State**:
+**Active Components:**
+- Background Subtraction: ❌ Inactive
+- Norfair Tracker: ❌ Inactive
+- CSRT Tracker: ✅ Active
 
-- User presses number key (0-9) → **LOCKED_MODE** (manual selection)
-- User presses 'R' key → Stays in **DETECTION_MODE** (reset PTZ)
+**Visual:**
+- Green box around locked object
+- ID number
+- Status: "TRACKING - ID: X"
 
-#### 3.2.2 LOCKED_MODE
+**User Actions:**
+- Press R: Release lock → DETECTION
+- Press Q: Quit
 
-**Purpose**: High-accuracy tracking of a single user-selected object
+**Automatic Transitions:**
+- CSRT fails → LOST
 
-**Active Modules**:
+#### LOST State
 
-- Background Subtraction: Inactive (not needed for CSRT)
-- Object Detection: Inactive
-- Norfair Tracker: Inactive
-- CSRT Tracker: Active (tracking locked object)
-- PTZ Control: Follows locked object
+**Purpose:** Attempt to reacquire lost object
 
-**Visual Indicators**:
+**Active Components:**
+- Background Subtraction: ✅ Active (for redetection)
+- Norfair Tracker: ❌ Inactive
+- CSRT Tracker: ⏸️ Suspended
 
-- Locked object: Green bounding box (thick, 3px)
-- Status text: "LOCKED" with object ID
-- Lock duration: Frame count since lock
+**Visual:**
+- Red circle showing search area
+- Status: "SEARCHING..."
+- Timer showing time remaining
 
-**Transitions From This State**:
+**Recovery Logic:**
+1. Run background subtraction
+2. Find contours near last known position (within search_radius)
+3. Match by size similarity
+4. If found: Reinitialize CSRT → TRACKING
+5. If timeout (3s): Give up → DETECTION
 
-- CSRT loses tracking → **LOST**
-- User presses 'R' key → **DETECTION_MODE** (manual release)
-
-#### 3.2.3 LOST
-
-**Purpose**: Temporary state when CSRT tracker loses the locked object
-
-**Active Modules**:
-
-- Background Subtraction: Active (for recovery)
-- Object Detection: Active (for recovery)
-- Norfair Tracker: Inactive
-- CSRT Tracker: Suspended
-- PTZ Control: Holds last position
-
-**Visual Indicators**:
-
-- Search area: Red circle around last known position
-- Status text: "SEARCHING..."
-- Timer: Seconds remaining for recovery
-
-**Recovery Logic**:
-
-- Search for object near last known position using background subtraction
-- Match candidates by size and distance
-- If match found → Reinitialize CSRT → **LOCKED_MODE**
-- If timeout exceeded → **DETECTION_MODE**
-
-**Transitions From This State**:
-
-- Object reacquired → **LOCKED_MODE** (automatic)
-- Recovery timeout (3 seconds) → **DETECTION_MODE** (automatic)
-- User presses 'R' key → **DETECTION_MODE** (manual abort)
-
-#### 3.2.4 IDLE (Optional State)
-
-**Purpose**: Application started but no video loaded or processing paused
-
-**Active Modules**:
-
-- All tracking modules: Inactive
-
-**Visual Indicators**:
-
-- Status text: "IDLE" or "PAUSED"
-
-**Transitions From This State**:
-
-- Video loaded/resumed → **DETECTION_MODE**
+**User Actions:**
+- Press R: Abort recovery → DETECTION
+- Press Q: Quit
 
 ### 3.3 State Transition Diagram
 
-'''
-┌──────────────┐
-│ IDLE │
-└──────┬───────┘
-│ Video loaded
-▼
-┌──────────────┐
-┌────────▶│ DETECTION │◀────────┐
-│ │ MODE │ │
-│ └──────┬───────┘ │
-│ │ User presses │
-│ │ number (0-9) │
-│ ▼ │
-│ ┌──────────────┐ │
-│ │ LOCKED │ │
-│ │ MODE │ │
-│ └──────┬───────┘ │
-│ │ CSRT lost │
-│ ▼ │
-Recovery │ ┌──────────────┐ │ Timeout
-timeout │ │ LOST │ │ or manual
-or manual │ │ (searching) │─────────┘ release
-release │ └──────┬───────┘
-│ │ Object found
-└────────────────┘
-'''
-
-### 3.4 System State Data Structure
-
-```python
-system_state = {
-    # Current state
-    'mode': 'DETECTION_MODE',  # 'DETECTION_MODE', 'LOCKED_MODE', 'LOST', 'IDLE'
-
-    # Tracker instances
-    'norfair_tracker': None,   # Norfair.Tracker instance
-    'csrt_tracker': None,      # cv2.TrackerCSRT instance
-
-    # Tracked objects (from Norfair in DETECTION_MODE)
-    'tracked_objects': [],     # List of Norfair TrackedObject instances
-
-    # Locked object info (in LOCKED_MODE)
-    'selected_object_id': None,  # ID of locked object (0-9)
-    'locked_bbox': None,         # Current bbox: (x, y, w, h)
-    'frames_since_lock': 0,      # Counter since lock started
-
-    # Recovery info (in LOST state)
-    'frames_lost': 0,            # Counter since object lost
-    'recovery_start_time': None, # Time when recovery started
-    'last_known_position': None, # (x, y) centroid
-    'last_known_size': None,     # (w, h) dimensions
-
-    # PTZ state
-    'ptz': {
-        'pan': 0.0,   # degrees
-        'tilt': 0.0,  # degrees
-        'zoom': 1.0   # magnification
-    },
-
-    # Frame tracking
-    'frame_count': 0,
-    'timestamp': 0.0
-}
 ```
-
-### 3.5 State Transition Functions
-
-#### 3.5.1 Initialize System
-
-```python
-def initialize_system():
-    """Initialize system in DETECTION_MODE"""
-    system_state['mode'] = 'DETECTION_MODE'
-    system_state['norfair_tracker'] = create_norfair_tracker()
-    system_state['csrt_tracker'] = None
-    system_state['tracked_objects'] = []
-```
-
-#### 3.5.2 Transition to Locked Mode
-
-```python
-def transition_to_locked_mode(selected_object, frame):
-    """Transition from DETECTION_MODE to LOCKED_MODE"""
-    # Get bbox from selected Norfair tracked object
-    bbox = selected_object.last_detection.data.get('bbox')
-
-    # Initialize CSRT tracker
-    csrt_tracker = cv2.TrackerCSRT_create()
-    success = csrt_tracker.init(frame, bbox)
-
-    if success:
-        system_state['mode'] = 'LOCKED_MODE'
-        system_state['csrt_tracker'] = csrt_tracker
-        system_state['selected_object_id'] = selected_object.id
-        system_state['locked_bbox'] = bbox
-        system_state['frames_since_lock'] = 0
-
-        x, y, w, h = bbox
-        system_state['last_known_position'] = (x + w/2, y + h/2)
-        system_state['last_known_size'] = (w, h)
-```
-
-#### 3.5.3 Transition to Lost
-
-```python
-def transition_to_lost():
-    """Transition from LOCKED_MODE to LOST"""
-    system_state['mode'] = 'LOST'
-    system_state['frames_lost'] = 0
-    system_state['recovery_start_time'] = time.time()
-    # Keep csrt_tracker, last_known_position, last_known_size for recovery
-```
-
-#### 3.5.4 Transition to Detection Mode
-
-```python
-def transition_to_detection_mode():
-    """Transition from any state to DETECTION_MODE"""
-    system_state['mode'] = 'DETECTION_MODE'
-    system_state['csrt_tracker'] = None
-    system_state['selected_object_id'] = None
-    system_state['locked_bbox'] = None
-    system_state['frames_since_lock'] = 0
-    system_state['frames_lost'] = 0
-    system_state['recovery_start_time'] = None
-    # Keep norfair_tracker running
-```
-
-### 3.6 State-Based Processing Logic
-
-Each frame, the processing pipeline branches based on current state:
-
-```python
-if system_state['mode'] == 'DETECTION_MODE':
-    # Run background subtraction
-    # Detect objects
-    # Update Norfair tracker
-    # Display all tracked objects with cyan boxes
-    # PTZ follows largest object
-    # Wait for user to press number key to lock
-
-elif system_state['mode'] == 'LOCKED_MODE':
-    # Update CSRT tracker
-    # Display locked object with green box
-    # PTZ follows locked object
-    # If CSRT fails → transition_to_lost()
-
-elif system_state['mode'] == 'LOST':
-    # Run background subtraction (for recovery)
-    # Search for matching object near last position
-    # Display search area (red circle)
-    # If found → reinitialize CSRT → LOCKED_MODE
-    # If timeout → transition_to_detection_mode()
-```
-
-### 3.7 User Input Handling by State
-
-#### In DETECTION_MODE
-
-- `0-9`: Lock onto object with that ID
-- `R`: Reset PTZ to center
-- `D`: Toggle debug mosaic
-- `Space`: Pause
-- `Q/ESC`: Quit
-
-#### In LOCKED_MODE
-
-- `R`: Release lock, return to DETECTION_MODE
-- `D`: Toggle debug mosaic
-- `Space`: Pause
-- `Q/ESC`: Quit
-
-#### In LOST
-
-- `R`: Abort recovery, return to DETECTION_MODE
-- `Q/ESC`: Quit
-
-### 3.8 Configuration Parameters
-
-```yaml
-system:
-  initial_state: "detection" # Start in DETECTION_MODE
-
-  state_transitions:
-    enable_manual_lock: true # Allow user to lock by pressing ID
-    recovery_timeout: 3.0 # Seconds before LOST→DETECTION_MODE
-    lost_frames_threshold: 15 # Frames of CSRT failure before LOST
-
-  recovery:
-    enable_recovery: true # Attempt to reacquire lost objects
-    search_radius: 150 # Pixels around last known position
-    size_similarity_threshold: 0.5 # Minimum size ratio for match
+        ┌──────────────┐
+   ┌───▶│  DETECTION   │◀────────┐
+   │    │ (Multi-obj)  │         │
+   │    └──────┬───────┘         │
+   │           │                 │
+   │    Press number key         │
+   │    (0-9)                    │
+   │           │                 │
+   │           ▼                 │
+   │    ┌──────────────┐         │
+   │    │   TRACKING   │         │
+   │    │ (Single-obj) │         │
+   │    └──────┬───────┘         │
+   │           │                 │
+   │    CSRT fails               │ Timeout
+   │           │                 │ or press R
+   │           ▼                 │
+   │    ┌──────────────┐         │
+   └────│     LOST     │─────────┘
+        │  (Recovery)  │
+        └──────────────┘
+             ▲    │
+             └────┘
+           Redetected
 ```
 
 ---
 
-## 4. COORDINATE SYSTEMS
+## 4. BACKGROUND SUBTRACTION
 
-### 4.1 Frame Coordinate System
+### 4.1 Library: OpenCV Only
 
-- Origin: Top-left corner of the original video frame
-- X-axis: Horizontal, increasing right (0 to frame_width)
-- Y-axis: Vertical, increasing downward (0 to frame_height)
-- Units: Pixels
+**Decision:** Use OpenCV exclusively (no BGSLibrary)
 
-### 4.2 Virtual PTZ Coordinate System
+**Rationale:**
+- Already a dependency
+- MOG2 and KNN are sufficient for most cases
+- Simpler installation and deployment
+- Fewer dependencies to manage
 
-- Pan: Horizontal rotation in degrees (-180° to +180°, 0° = center)
-- Tilt: Vertical rotation in degrees (-90° to +90°, 0° = center)
-- Zoom: Magnification factor (1.0 = no zoom, >1.0 = zoomed in)
+### 4.2 Algorithms
 
-### 4.3 Normalized Coordinate System
-
-- Used for tracking calculations
-- Range: (0.0, 0.0) to (1.0, 1.0)
-- Independent of actual frame resolution
-- Center point: (0.5, 0.5)
-
-### 4.4 Region of Interest (ROI) Coordinate System
-
-- Defines the current virtual camera viewport
-- Expressed as rectangle in frame coordinates
-- Calculated from pan, tilt, and zoom parameters
-- Bounds: Must remain within original frame dimensions
-
----
-
-## 5. BACKGROUND SUBTRACTION MODULE
-
-### 5.1 Library Selection
-
-The system exclusively uses OpenCV for background subtraction. OpenCV provides several algorithms:
-
-- **cv2.createBackgroundSubtractorMOG2()**: Gaussian Mixture Model
-- **cv2.createBackgroundSubtractorKNN()**: K-Nearest Neighbors based
-- **cv2.bgsegm.createBackgroundSubtractorMOG()**: Original MOG (legacy)
-- **cv2.bgsegm.createBackgroundSubtractorGMG()**: Geometric multigrid
-- **cv2.bgsegm.createBackgroundSubtractorCNT()**: Counting-based
-
-### 5.2 Algorithm Selection Strategy
-
-- **Default**: **MOG2** (best balance of speed and accuracy)
-- **High Accuracy**: **KNN**
-- **High Speed**: **MOG**
-- **Outdoor/Dynamic Lighting**: **MOG2**
-- **Indoor/Static Lighting**: **KNN**
-- **Minimal Resources**: **MOG**
-- **Complex Scenes**: **GMG**
-
-### 5.3 Implementation Details
-
-#### 5.3.1 OpenCV MOG2
-
-**Initialization**:
+#### MOG2 (Default - Recommended)
 
 ```python
 bg_subtractor = cv2.createBackgroundSubtractorMOG2(
@@ -438,24 +236,15 @@ bg_subtractor = cv2.createBackgroundSubtractorMOG2(
 )
 ```
 
-**Application**:
+**Pros:**
+- Best balance of speed and accuracy
+- Good shadow detection
+- Adaptive to lighting changes
+- Works well outdoors
 
-```python
-fg_mask = bg_subtractor.apply(frame, learningRate=-1)
-```
+**Use for:** General purpose, outdoor scenes, dynamic lighting
 
-**Parameters**:
-
-- **history**: Number of last frames affecting background model (default: 500)
-- **varThreshold**: Threshold on squared Mahalanobis distance (default: 16)
-- **detectShadows**: Enable/disable shadow detection (default: True)
-- **learningRate**: Background model update rate (default: -1 for automatic)
-  - Range: -1 (automatic), 0.0 (no learning) to 1.0 (complete replacement)
-  - Recommended: 0.001 to 0.01 for slow learning, 0.05 to 0.1 for fast adaptation
-
-#### 5.3.2 OpenCV KNN
-
-**Initialization**:
+#### KNN (Alternative)
 
 ```python
 bg_subtractor = cv2.createBackgroundSubtractorKNN(
@@ -465,1945 +254,536 @@ bg_subtractor = cv2.createBackgroundSubtractorKNN(
 )
 ```
 
-**Application**:
+**Pros:**
+- Better for rapid changes
+- Less memory usage
+- Good for indoor scenes
+
+**Use for:** Indoor scenes, static lighting, rapid motion
+
+### 4.3 Mask Post-Processing (Simplified)
+
+**Pipeline: 3 Steps (not 6)**
 
 ```python
-fg_mask = bg_subtractor.apply(frame, learningRate=-1)
-```
-
-**KNN vs MOG2**:
-
-- KNN: Better for scenes with rapid changes, less memory
-- MOG2: Better shadow detection, more stable in static scenes
-
-### 5.5 Background Model Management
-
-- **Initialization Phase**: First N frames used to build initial model (N = 30-120)
-- **Update Strategy**: Continuous online update or periodic reset
-- **Learning Rate Adaptation**:
-  - Higher rate (0.01-0.05) for dynamic scenes
-  - Lower rate (0.001-0.005) for static scenes
-  - Automatic adjustment based on scene change detection
-- **Reset Conditions**:
-  - Manual reset trigger
-  - Automatic reset when tracking is lost for >T seconds
-  - Scene change detection (average pixel change > threshold)
-
-### 5.6 Foreground Mask Post-Processing (OpenCV)
-
-This is the recommended pipeline for cleaning the foreground mask:
-
-**Complete mask cleanup workflow:**
-
-```
-Sequence:
-1. Erosion - Remove small noise
-2. Dilation - Restore object size
-3. Gaussian Blur - Smooth edges and reduce noise
-4. Morphological Closing - Fill remaining holes
-5. Binary Threshold - Final cleanup
-```
-
-**Detailed Steps:**
-
-1. **Create Kernel**
-
-   ```
-   kernel = np.ones((5, 5), np.uint8)
-   # Creates a 5×5 rectangular kernel of ones
-   ```
-
-2. **Erosion** (Remove small noise pixels)
-
-   ```
-   Function: cv2.erode(mask, kernel, iterations)
-   fgMask = cv2.erode(fgMask, kernel, iterations=1)
-   ```
-
-   - Removes small white noise
-   - Shrinks foreground objects slightly
-
-3. **Dilation** (Restore object size)
-
-   ```
-   Function: cv2.dilate(mask, kernel, iterations)
-   fgMask = cv2.dilate(fgMask, kernel, iterations=1)
-   ```
-
-   - Restores object size after erosion
-   - Connects nearby components
-   - Together with erosion forms an "opening" operation
-
-4. **Gaussian Blur** (Smooth and reduce noise)
-
-   ```
-   Function: cv2.GaussianBlur(mask, ksize, sigmaX)
-   fgMask = cv2.GaussianBlur(fgMask, (3, 3), 0)
-   ```
-
-   - **ksize**: Kernel size (3, 3) - must be odd
-   - **sigmaX**: Standard deviation (0 = auto-calculate from kernel size)
-   - **Purpose**: Smooths edges, reduces high-frequency noise
-   - **Effect**: Softens mask before final operations
-
-5. **Morphological Closing** (Fill holes)
-
-   ```
-   Function: cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-   fgMask = cv2.morphologyEx(fgMask, cv2.MORPH_CLOSE, kernel)
-   ```
-
-   - Fills small holes inside objects
-   - Connects broken parts of objects
-   - Dilation followed by erosion
-
-6. **Binary Threshold** (Final cleanup)
-
-   ```
-   Function: cv2.threshold(mask, threshold, maxval, type)
-   _, fgMask = cv2.threshold(fgMask, 130, 255, cv2.THRESH_BINARY)
-   ```
-
-   - **threshold**: 130 (higher than default 127)
-   - **maxval**: 255 (white)
-   - **type**: cv2.THRESH_BINARY
-   - **Purpose**: Convert to pure binary after blur
-   - **Returns**: (threshold*value, binary_mask) - use * to discard first value
-
-**Complete Function Chain:**
-
-```
+# Step 1: Opening (removes noise, preserves objects)
 kernel = np.ones((5, 5), np.uint8)
-fgMask = cv2.erode(fgMask, kernel, iterations=1)
-fgMask = cv2.dilate(fgMask, kernel, iterations=1)
-fgMask = cv2.GaussianBlur(fgMask, (3, 3), 0)
-fgMask = cv2.morphologyEx(fgMask, cv2.MORPH_CLOSE, kernel)
-_, fgMask = cv2.threshold(fgMask, 130, 255, cv2.THRESH_BINARY)
+mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+
+# Step 2: Closing (fills holes)
+mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+# Step 3: Binary threshold
+_, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
 ```
 
-**Kernel Size Configuration:**
-
-- **Small kernel** (3×3): For fine details and small objects
-- **Default kernel** (5×5): Good general-purpose size (recommended)
-- **Large kernel** (7×7 or 9×9): For aggressive filtering, merge nearby objects
-
-**Gaussian Blur Kernel:**
-
-- Use small odd values: (3, 3) or (5, 5)
-- Larger values create more smoothing
-
-**Threshold Value:**
-
-- Default: 130 (stricter than standard 127)
-- Lower values (100-127): More permissive, more foreground pixels
-- Higher values (130-150): Stricter, fewer false positives
-
-**Advantages of this pipeline:**
-
-- Gaussian blur adds noise reduction beyond morphological operations
-- Sequence is optimized: removes noise first, then smooths, then finalizes
-- Threshold value of 130 is stricter, reducing false positives
-- Simple and effective for most scenarios
+**Configuration:**
+- `kernel_size`: 3, 5, or 7 (default: 5)
+- `threshold_value`: 100-150 (default: 127)
 
 ---
 
-## 6. OBJECT DETECTION MODULE
+## 5. OBJECT DETECTION
 
-### 6.1 Contour Detection (OpenCV)
-
-#### 6.1.1 Find Contours
-
-Function: `cv2.findContours(binary_mask, mode, method)`
-
-- **binary_mask**: Binary foreground mask (8-bit single-channel)
-- **mode**: `cv2.RETR_EXTERNAL` (only external contours)
-  - Alternative: `cv2.RETR_LIST` (all contours without hierarchy)
-- **method**: `cv2.CHAIN_APPROX_SIMPLE` (compress contours)
-  - Alternative: `cv2.CHAIN_APPROX_NONE` (all points, higher memory)
-- **Returns**: Tuple (contours, hierarchy)
-  - **contours**: List of contour arrays
-  - **hierarchy**: Hierarchy information (can be ignored)
-
-**Usage Note**: OpenCV 4.x returns (contours, hierarchy), OpenCV 3.x returns (image, contours, hierarchy)
-
-### 6.2 Contour Filtering (OpenCV)
-
-#### 6.2.1 Area Filtering
-
-Function: `cv2.contourArea(contour)`
-
-- **Returns**: Area in square pixels
-- **Filtering Logic**:
-  - Minimum area: `area >= min_area` (default: 500 pixels)
-  - Maximum area: `area <= frame_width * frame_height * max_fraction` (default: 0.3)
-- **Purpose**: Remove tiny noise and overly large regions
-
-#### 6.2.2 Aspect Ratio Filtering
-
-Steps:
-
-1. Get bounding box: `x, y, w, h = cv2.boundingRect(contour)`
-2. Calculate aspect ratio: `aspect_ratio = w / h`
-3. Filter: `min_ratio <= aspect_ratio <= max_ratio` (default: 0.2 to 5.0)
-
-- **Purpose**: Remove elongated objects (likely noise or shadows)
-
-#### 6.2.3 Solidity Filtering
-
-Steps:
-
-1. Get contour area: `area = cv2.contourArea(contour)`
-2. Get convex hull: `hull = cv2.convexHull(contour)`
-3. Get hull area: `hull_area = cv2.contourArea(hull)`
-4. Calculate solidity: `solidity = area / hull_area`
-5. Filter: `solidity >= min_solidity` (default: 0.3)
-
-- **Purpose**: Remove irregular shapes (likely fragmented detections)
-
-#### 6.2.4 Extent Filtering
-
-Steps:
-
-1. Get contour area: `area = cv2.contourArea(contour)`
-2. Get bounding rect: `x, y, w, h = cv2.boundingRect(contour)`
-3. Calculate extent: `extent = area / (w * h)`
-4. Filter: `extent >= min_extent` (default: 0.2)
-
-- **Purpose**: Remove sparse or scattered detections
-
-### 6.3 Bounding Box Calculation (OpenCV)
-
-#### 6.3.1 Axis-Aligned Bounding Rectangle
-
-Function: `cv2.boundingRect(contour)`
-
-- **Returns**: (x, y, width, height)
-- **Coordinate**: (x, y) is top-left corner
-- **Usage**: Fast, simple, good for most cases
-
-#### 6.3.2 Minimum Area Rectangle (Rotated)
-
-Function: `cv2.minAreaRect(contour)`
-
-- **Returns**: ((center_x, center_y), (width, height), angle)
-- **Usage**: For rotated objects
-- **Box Points**: `cv2.boxPoints(rect)` to get 4 corner points
-
-#### 6.3.3 Bounding Box Padding
-
-Add padding to bounding box:
-
-- `x_padded = max(0, x - padding)`
-- `y_padded = max(0, y - padding)`
-- `w_padded = min(frame_width - x_padded, w + 2*padding)`
-- `h_padded = min(frame_height - y_padded, h + 2*padding)`
-
-### 6.4 Object Properties Extraction (OpenCV)
-
-#### 6.4.1 Centroid Calculation
-
-Method 1 (from bounding box):
-
-- `centroid_x = x + w / 2`
-- `centroid_y = y + h / 2`
-
-Method 2 (from contour moments):
-Function: `cv2.moments(contour)`
-
-- **Returns**: Dictionary of moment values
-- **Centroid calculation**:
-  - `M = cv2.moments(contour)`
-  - `centroid_x = M['m10'] / M['m00']` (if M['m00'] != 0)
-  - `centroid_y = M['m01'] / M['m00']` (if M['m00'] != 0)
-- **Advantage**: More accurate, weighted by pixel distribution
-
-#### 6.4.2 Area and Perimeter
-
-- **Area**: `cv2.contourArea(contour)` - returns float
-- **Perimeter**: `cv2.arcLength(contour, closed=True)` - returns float
-- **closed**: True for closed contours
-
-#### 6.4.3 Complete Property Set
-
-For each detected object, extract:
-
-- **Centroid**: (cx, cy) - from moments or bounding box
-- **Area**: Square pixels - from contourArea()
-- **Perimeter**: Pixels - from arcLength()
-- **Bounding Box**: (x, y, w, h) - from boundingRect()
-- **Aspect Ratio**: w / h
-- **Solidity**: area / hull_area
-- **Extent**: area / (w × h)
-- **Convex Hull**: cv2.convexHull(contour) - for advanced processing
-
-### 6.5 Object Selection Strategy
-
-When multiple objects detected, prioritize by:
-
-1. **Largest Area**: Select object with maximum area
-2. **Closest to Center**: Select object nearest to frame center
-3. **Previously Tracked**: Continue tracking same object (with association)
-4. **Highest Confidence**: Composite score from multiple features
-5. **User-defined Priority Zones**: Prefer objects in specific regions
-
----
-
-## 7. TRACKING CONTROLLER
-
-### 7.1 Overview
-
-The Tracking Controller implements the dual-mode tracking system described in **Section 3 (SYSTEM STATE MANAGEMENT)**. This module manages:
-
-- Norfair multi-object tracker (active in DETECTION_MODE and LOST states)
-- CSRT single-object tracker (active in LOCKED_MODE)
-- State transitions (see Section 3.3 for state diagram)
-
-**Key Responsibilities**:
-
-1. Maintain Norfair tracker for multi-object detection
-2. Initialize and update CSRT tracker for locked object
-3. Execute recovery logic when tracking is lost
-4. Provide current object position/bbox to PTZ control module
-
-### 7.2 Tracking Libraries
-
-#### 7.2.1 Norfair - Multi-Object Tracking
-
-**Purpose**: Track multiple detected objects when in detection mode
-
-**Installation**:
-
-'''bash
-pip install norfair
-
-# or with Pixi:
-
-pixi add --pypi norfair
-'''
-
-**Key Features**:
-
-- Tracks multiple objects simultaneously
-- Uses detections from background subtraction
-- Handles object association across frames
-- Robust to temporary occlusions
-- Distance-based matching
-
-**Core Components**:
-
-- `Detection`: Represents a detected object with position
-- `Tracker`: Main tracker object that maintains tracked objects
-- `TrackedObject`: Object being tracked with history
-
-#### 7.2.2 OpenCV CSRT Tracker - Single Object Tracking
-
-**Purpose**: Track chosen object with high accuracy
-
-**Algorithm**: CSRT (Discriminative Correlation Filter with Channel and Spatial Reliability)
-
-**Advantages**:
-
-- Very accurate, even with scale changes
-- Handles partial occlusions
-- Good with non-rigid objects
-- Better than KCF, MOSSE, MedianFlow for complex scenarios
-
-**Initialization**:
+### 5.1 Contour Detection
 
 ```python
-tracker = cv2.TrackerCSRT_create()
-tracker.init(frame, bbox)
-```
-
-**Update**:
-
-```python
-success, bbox = tracker.update(frame)
-```
-
-### 7.3 System State Reference
-
-The tracking controller operates based on the system-wide state machine defined in **Section 3 (SYSTEM STATE MANAGEMENT)**.
-
-**System States** (see Section 3.2 for details):
-
-- **DETECTION_MODE**: Norfair tracks multiple objects, no lock
-- **LOCKED_MODE**: CSRT tracks single selected object
-- **LOST**: Recovery mode after CSRT failure
-- **IDLE**: No tracking active
-
-**State Transitions** (see Section 3.3 for diagram):
-
-- DETECTION_MODE → LOCKED_MODE: Manual selection (user presses object ID)
-- LOCKED_MODE → LOST: CSRT tracking failure
-- LOST → LOCKED_MODE: Successful recovery
-- LOST → DETECTION_MODE: Recovery timeout
-- Any state → DETECTION_MODE: Manual release (press 'R')
-
-All state management is stored in the global `system_state` data structure (see Section 3.4).
-
-### 7.4 Detection Mode (Norfair) Implementation
-
-#### 7.4.1 Norfair Initialization
-
-```python
-from norfair import Detection, Tracker
-from norfair.distances import euclidean_distance
-
-tracker = Tracker(
-    distance_function=euclidean_distance,
-    distance_threshold=50,  # Maximum distance for association
-    hit_counter_max=10,     # Frames to keep object without detection
-    initialization_delay=3,  # Frames before confirming new object
-    pointwise_hit_counter_max=4
+contours, _ = cv2.findContours(
+    mask,
+    cv2.RETR_EXTERNAL,
+    cv2.CHAIN_APPROX_SIMPLE
 )
 ```
 
-#### 7.4.2 Creating Detections from Contours
-
-For each detected object from background subtraction:
+### 5.2 Filtering Criteria
 
 ```python
+for contour in contours:
+    area = cv2.contourArea(contour)
+
+    # Filter by area
+    if area < min_area:  # Default: 500
+        continue
+
+    if area > frame_area * max_area_fraction:  # Default: 0.5
+        continue
+
+    # Optional: Filter by aspect ratio
+    x, y, w, h = cv2.boundingRect(contour)
+    aspect_ratio = w / h
+    if not (min_aspect_ratio <= aspect_ratio <= max_aspect_ratio):
+        continue
+
+    # Accept this contour
+    valid_contours.append(contour)
+```
+
+### 5.3 Convert to Norfair Detections
+
+```python
+from norfair import Detection
+
 detections = []
 for contour in valid_contours:
     x, y, w, h = cv2.boundingRect(contour)
-    centroid = np.array([x + w/2, y + h/2])
+    centroid = np.array([[x + w/2, y + h/2]])
 
-    # Create Norfair Detection
     detection = Detection(
-        points=centroid.reshape(1, 2),  # Shape: (1, 2)
-        scores=np.array([confidence]),   # Optional confidence score
-        data={'bbox': (x, y, w, h)}     # Store additional data
+        points=centroid,
+        data={'bbox': (x, y, w, h)}
     )
     detections.append(detection)
 ```
 
-#### 7.4.3 Updating Norfair Tracker
+---
+
+## 6. MULTI-OBJECT TRACKING (Norfair)
+
+### 6.1 Why Norfair?
+
+- Handles ID assignment automatically
+- Maintains ID persistence across frames
+- Robust to temporary occlusions
+- Only ~50 lines of integration code
+- Saves ~150 lines of DIY tracking
+
+### 6.2 Initialization
 
 ```python
-tracked_objects = tracker.update(
-    detections=detections,
-    period=1  # Update period (frames)
+from norfair import Tracker
+
+tracker = Tracker(
+    distance_threshold=50,      # Max pixels for association
+    hit_counter_max=10,         # Frames to keep track without detection
+    initialization_delay=3      # Frames before confirming new track
 )
 ```
 
-#### 7.4.4 Accessing Tracked Objects
+### 6.3 Update and Display
 
 ```python
-for tracked_obj in tracked_objects:
-    # Get estimated position
-    position = tracked_obj.estimate[0]  # Shape: (2,) for [x, y]
-    x, y = position[0], position[1]
+# Update tracker
+tracked_objects = tracker.update(detections)
 
-    # Get bounding box from data (if stored)
-    if tracked_obj.last_detection is not None:
-        bbox = tracked_obj.last_detection.data.get('bbox')
+# Display with IDs
+for obj in tracked_objects:
+    if obj.last_detection is None:
+        continue
 
-    # Get tracking ID
-    track_id = tracked_obj.id
+    bbox = obj.last_detection.data['bbox']
+    obj_id = obj.id
 
-    # Check if object is being tracked actively
-    is_tracking = not tracked_obj.is_initializing
+    # Draw cyan box
+    cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 255, 0), 2)
 
-    # Age of track (frames)
-    age = tracked_obj.age
+    # Draw ID
+    cv2.putText(frame, f"ID: {obj_id}", (x, y-10),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
 ```
 
-#### 7.4.5 Object Selection Method
-
-When in DETECTION_MODE, objects can only be locked via **manual selection**:
-
-- User presses numeric key (0-9) matching the object's track ID
-- Each tracked object displays its ID above the bounding box
-- Only objects with stable tracks (age > min_track_age) are selectable
-- See Section 7.8.2 for implementation details
-
-### 7.5 Locked Mode (CSRT) Implementation
-
-#### 7.5.1 CSRT Initialization
-
-When transitioning to LOCKED_MODE:
+### 6.4 Object Selection
 
 ```python
-# Create CSRT tracker
-csrt_tracker = cv2.TrackerCSRT_create()
+# User presses number key (0-9)
+if ord('0') <= key <= ord('9'):
+    selected_id = key - ord('0')
 
-# Initialize with chosen object's bounding box
-bbox = (x, y, w, h)  # From selected Norfair tracked object
-success = csrt_tracker.init(frame, bbox)
-
-if success:
-    state = 'LOCKED_MODE'
+    # Find object with this ID
+    for obj in tracked_objects:
+        if obj.id == selected_id:
+            # Check minimum age
+            if obj.age >= min_track_age:  # Default: 5 frames
+                bbox = obj.last_detection.data['bbox']
+                # Initialize CSRT with this bbox
+                initialize_csrt_tracker(frame, bbox)
+                state = State.TRACKING
 ```
 
-#### 7.5.2 CSRT Update
+---
 
-On each frame in LOCKED_MODE:
+## 7. SINGLE-OBJECT TRACKING (CSRT/KCF)
+
+### 7.1 Tracker Selection
+
+**KCF (Default - Recommended for MVP)**
+```python
+tracker = cv2.TrackerKCF_create()
+```
+- **Speed:** ⚡⚡⚡ Fast (30+ FPS)
+- **Accuracy:** ⭐⭐⭐ Good
+- **Use for:** Real-time applications, MVP
+
+**CSRT (Alternative - Higher Accuracy)**
+```python
+tracker = cv2.TrackerCSRT_create()
+```
+- **Speed:** ⚡⚡ Moderate (15-25 FPS)
+- **Accuracy:** ⭐⭐⭐⭐ Excellent
+- **Use for:** When accuracy > speed
+
+### 7.2 Initialization
 
 ```python
-success, bbox = csrt_tracker.update(frame)
+def initialize_csrt(frame, bbox):
+    tracker = cv2.TrackerKCF_create()  # or TrackerCSRT_create()
+    success = tracker.init(frame, bbox)
+    return tracker if success else None
+```
 
-if success:
+### 7.3 Update Loop
+
+```python
+success, bbox = tracker.update(frame)
+
+if success and is_valid_bbox(bbox, frame.shape):
+    # Continue tracking
     x, y, w, h = map(int, bbox)
-    # Use bbox for PTZ control
+    # Draw green box
+    cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 3)
 else:
     # Tracking failed
-    state = 'LOST'
+    state = State.LOST
 ```
 
-#### 7.5.3 CSRT Tracker Properties
-
-- **Pros**:
-  - Highly accurate
-  - Handles scale changes
-  - Robust to partial occlusions
-  - Good with rotation
-- **Cons**:
-  - Slower than KCF or MOSSE
-  - Can drift over long sequences
-  - Requires reinitialization after complete occlusion
-
-#### 7.5.4 When to Reinitialize
-
-Reinitialize CSRT tracker when:
-
-- Confidence drops below threshold
-- Object completely disappears
-- User manually resets
-- Bbox becomes too small or too large
-
-### 7.6 Tracking Parameters
-
-#### 7.6.1 Norfair Parameters
+### 7.4 Validation
 
 ```python
-norfair_config = {
-    'distance_threshold': 50,        # Max pixels for association
-    'hit_counter_max': 10,           # Frames to keep track without detection
-    'initialization_delay': 3,       # Frames to confirm new track
-    'pointwise_hit_counter_max': 4,  # Per-point hit counter
-    'distance_function': 'euclidean' # or 'iou'
-}
-```
+def is_valid_bbox(bbox, frame_shape):
+    x, y, w, h = map(int, bbox)
 
-#### 7.6.2 CSRT Parameters
-
-CSRT uses internal parameters (no external configuration needed), but monitor:
-
-- **Success flag**: Returned by `update()`
-- **Bbox validity**: Check if bbox is reasonable (not too small/large)
-
-#### 7.6.3 Mode Transition Parameters
-
-```python
-tracking_params = {
-    'auto_select_threshold': 30,      # Frames before auto-selecting largest object
-    'lost_frames_threshold': 15,      # Frames before declaring CSRT lost
-    'recovery_timeout': 3.0,          # Seconds to attempt recovery
-    'min_detection_confidence': 0.5,  # Minimum confidence for redetection
-}
-```
-
-### 7.7 Recovery Strategy
-
-When CSRT tracker is LOST:
-
-#### 7.7.1 Step 1: Search Using Background Subtraction
-
-- Continue running background subtraction
-- Look for objects with similar size/position to lost object
-
-#### 7.7.2 Step 2: Object Matching
-
-Match candidates based on:
-
-1. **Distance**: Within search radius of last known position
-2. **Size similarity**: Area within 50% of last known size
-3. **Appearance** (optional): Color histogram similarity
-
-#### 7.7.3 Step 3: Reinitialization
-
-If matching object found:
-
-```python
-# Reinitialize CSRT with new bbox
-csrt_tracker = cv2.TrackerCSRT_create()
-csrt_tracker.init(frame, matched_bbox)
-state = 'LOCKED_MODE'
-```
-
-#### 7.7.4 Step 4: Timeout
-
-If recovery_timeout exceeded:
-
-```python
-state = 'DETECTION_MODE'
-# Return to Norfair multi-object tracking
-```
-
-### 7.8 Object Selection (Manual ID-based Only)
-
-The system uses **manual selection only**. The user must explicitly press a numeric key (0-9) to lock onto an object.
-
-#### 7.8.1 Manual Selection Implementation
-
-The system exclusively uses manual selection by typing the object's ID.
-
-```python
-# User types the ID number of the object they want to lock onto
-if system_state['mode'] == 'DETECTION_MODE':
-    key = cv2.waitKey(1) & 0xFF
-
-    # Check if numeric key pressed (0-9)
-    if ord('0') <= key <= ord('9'):
-        typed_id = key - ord('0')  # Convert to integer ID
-
-        # Find tracked object with this ID
-        selected_obj = None
-        for obj in system_state['tracked_objects']:
-            if obj.id == typed_id:
-                selected_obj = obj
-                break
-
-        if selected_obj and selected_obj.last_detection is not None:
-            # Check if object is stable enough (optional)
-            if selected_obj.age >= min_track_age:
-                transition_to_locked_mode(selected_obj, frame)
-            else:
-                print(f"[TRACKING] Object {typed_id} not stable yet (age: {selected_obj.age})")
-        else:
-            print(f"[TRACKING] Object ID {typed_id} not found")
-```
-
-#### 7.8.2 Selection Requirements
-
-This is the sole method for object selection within the system.
-
-- Object must exist in current frame (tracked by Norfair)
-- Object ID must be 0-9 (Norfair assigns IDs automatically)
-- Optional: Object should be stable (age > min_track_age, default: 5 frames)
-- Only available when system_state['mode'] == 'DETECTION_MODE'
-
-### 7.9 Tracking Quality Metrics
-
-#### 7.9.1 Norfair Tracking Quality
-
-- **Track Age**: Number of frames object has been tracked
-- **Hit Ratio**: Detections / total frames
-- **Position Stability**: Variance of position over time
-
-#### 7.9.2 CSRT Tracking Quality
-
-Monitor these indicators:
-
-```python
-# Check bbox validity
-def is_bbox_valid(bbox, frame_shape):
-    x, y, w, h = bbox
-
-    # Check if bbox is within frame
-    if x < 0 or y < 0 or x + w > frame_shape[1] or y + h > frame_shape[0]:
+    # Check bounds
+    if x < 0 or y < 0:
+        return False
+    if x + w > frame_shape[1] or y + h > frame_shape[0]:
         return False
 
-    # Check if bbox is reasonable size
+    # Check reasonable size
     area = w * h
-    frame_area = frame_shape[0] * frame_shape[1]
-
-    if area < 100 or area > frame_area * 0.8:
+    if area < min_bbox_area:  # Default: 100
+        return False
+    if area > frame_shape[0] * frame_shape[1] * 0.8:
         return False
 
     return True
-
-# Confidence heuristic (not provided by CSRT)
-def estimate_confidence(bbox, bbox_history, frame):
-    # Track bbox size consistency
-    size_variance = calculate_size_variance(bbox_history)
-
-    # Track position smoothness
-    position_variance = calculate_position_variance(bbox_history)
-
-    # Combined confidence
-    confidence = 1.0 - (size_variance + position_variance) / 2
-    return max(0.0, min(1.0, confidence))
-```
-
-### 7.10 Data Structures
-
-#### 7.10.1 System State Reference
-
-The tracking controller uses the global `system_state` dictionary defined in **Section 3.4**. Key fields used by this module:
-
-```python
-# From system_state (see Section 3.4 for complete structure)
-system_state['mode']                  # Current state: 'DETECTION_MODE', 'LOCKED_MODE', 'LOST', 'IDLE'
-system_state['norfair_tracker']       # Norfair.Tracker instance
-system_state['csrt_tracker']          # cv2.TrackerCSRT instance
-system_state['tracked_objects']       # List of Norfair TrackedObject instances
-system_state['selected_object_id']    # ID of locked object (0-9)
-system_state['locked_bbox']           # Current CSRT bbox: (x, y, w, h)
-system_state['frames_since_lock']     # Counter since lock started
-system_state['frames_lost']           # Counter since object lost
-system_state['recovery_start_time']   # Time when recovery started
-system_state['last_known_position']   # (x, y) centroid
-system_state['last_known_size']       # (w, h) dimensions
-```
-
-**Note**: This module reads and modifies the system-wide state. State transitions should use the functions defined in Section 3.5.
-
-#### 7.10.2 Detection Object (for Norfair)
-
-```python
-detection = {
-    'points': np.array([[x, y]]),  # Centroid
-    'scores': np.array([conf]),    # Confidence
-    'data': {
-        'bbox': (x, y, w, h),
-        'area': w * h,
-        'contour': contour
-    }
-}
-```
-
-#### 7.10.3 Tracked Object Info
-
-```python
-tracked_info = {
-    'id': track_id,
-    'position': (x, y),
-    'bbox': (x, y, w, h),
-    'age': frames_tracked,
-    'last_detection_frame': frame_number,
-    'velocity': (vx, vy),
-    'is_active': bool
-}
 ```
 
 ---
 
-## 8. VIRTUAL PTZ CONTROL ENGINE
+## 8. RECOVERY MECHANISM
 
-### 8.1 Control Loop Architecture
+### 8.1 Lost Object Redetection
 
-- **Input**: Target object centroid in frame coordinates
-- **Output**: Pan, tilt, zoom commands
-- **Update Rate**: Match video frame rate (e.g., 30 Hz)
-- **Control Strategy**: PID controller or proportional control
+```python
+def attempt_redetection(frame, last_bbox, config):
+    # Run background subtraction
+    mask = bg_subtractor.apply(frame)
+    mask = clean_mask(mask)
 
-### 8.2 Pan Control
+    # Find contours
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-- **Input**: Horizontal offset from frame center
-- **Calculation**:
-  - Error = (object_x - frame_center_x) / frame_width
-  - Pan_angle += error × pan_sensitivity
-- **Pan Sensitivity**: Degrees per normalized unit (default: 45°)
-- **Pan Limits**: Calculated based on zoom level and frame dimensions
-- **Pan Speed Limits**: Maximum change per frame (default: 2° per frame)
+    # Last known position
+    last_cx = last_bbox[0] + last_bbox[2] / 2
+    last_cy = last_bbox[1] + last_bbox[3] / 2
+    last_area = last_bbox[2] * last_bbox[3]
 
-### 8.3 Tilt Control
+    # Find nearest matching contour
+    search_radius = config['recovery']['search_radius']  # Default: 150
+    size_threshold = config['recovery']['size_similarity_threshold']  # Default: 0.5
 
-- **Input**: Vertical offset from frame center
-- **Calculation**:
-  - Error = (object_y - frame_center_y) / frame_height
-  - Tilt_angle += error × tilt_sensitivity
-- **Tilt Sensitivity**: Degrees per normalized unit (default: 30°)
-- **Tilt Limits**: Calculated based on zoom level and frame dimensions
-- **Tilt Speed Limits**: Maximum change per frame (default: 1.5° per frame)
+    best_match = None
+    best_distance = float('inf')
 
-### 8.4 Zoom Control
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area < min_area:
+            continue
 
-- **Trigger Conditions**:
-  - Object too small: zoom in
-  - Object too large: zoom out
-  - Object near frame edge: zoom out for wider view
-- **Zoom Target Calculation**:
-  - Desired object size: 20-40% of frame dimension
-  - Zoom = frame_dimension / (desired_fraction × object_dimension)
-- **Zoom Limits**:
-  - Minimum: 1.0 (no zoom)
-  - Maximum: Configurable (default: 5.0)
-- **Zoom Speed**: Exponential change rate (default: 0.05 per frame)
+        x, y, w, h = cv2.boundingRect(contour)
+        cx = x + w / 2
+        cy = y + h / 2
 
-### 8.5 Deadband Zones
+        # Check distance
+        distance = np.sqrt((cx - last_cx)**2 + (cy - last_cy)**2)
+        if distance > search_radius:
+            continue
 
-- **Center Deadband**: No adjustment if object within central region
-  - Horizontal deadband: ±5% of frame width
-  - Vertical deadband: ±5% of frame height
-- **Purpose**: Reduce jitter and unnecessary micro-adjustments
-- **Configurable**: Adjust based on tracking precision requirements
+        # Check size similarity
+        size_ratio = min(area, last_area) / max(area, last_area)
+        if size_ratio < size_threshold:
+            continue
 
-### 8.6 Smoothing and Damping
+        # Better match found
+        if distance < best_distance:
+            best_match = (x, y, w, h)
+            best_distance = distance
 
-- **Exponential Moving Average**:
-  - Smooth pan/tilt commands: value = alpha × new + (1-alpha) × old
-  - Alpha (smoothing factor): 0.1 to 0.5
-- **Velocity Limiting**: Cap maximum change per frame
-- **Acceleration Limiting**: Cap rate of velocity change
-
-### 8.7 ROI Calculation from PTZ Parameters
-
-Given pan, tilt, and zoom:
-
-1. Calculate virtual viewport size: (width/zoom, height/zoom)
-2. Calculate viewport center from pan/tilt angles
-3. Calculate ROI top-left: (center_x - width/(2×zoom), center_y - height/(2×zoom))
-4. Clamp ROI to stay within original frame bounds
-5. Return ROI as (x, y, w, h)
-
----
-
-## 9. FRAME RENDERING MODULE
-
-### 9.1 Virtual Camera Transformation (OpenCV)
-
-#### 9.1.1 ROI Extraction
-
-Direct array slicing (NumPy):
-
-- `roi = frame[y:y+h, x:x+w]`
-- Where (x, y, w, h) is the ROI rectangle
-- **Bounds checking**: Ensure x, y, w, h are within frame dimensions
-
-Alternative using OpenCV:
-
-- `roi = frame[y1:y2, x1:x2].copy()`
-
-#### 9.1.2 ROI Resizing
-
-Function: `cv2.resize(roi, dsize, interpolation)`
-
-- **roi**: Extracted region of interest
-- **dsize**: Output size as (width, height) tuple
-- **interpolation**: Resampling method
-  - `cv2.INTER_LINEAR`: Bilinear (default, fast, good quality)
-  - `cv2.INTER_CUBIC`: Bicubic (slower, better quality for zooming in)
-  - `cv2.INTER_LANCZOS4`: Lanczos (slowest, best quality)
-  - `cv2.INTER_NEAREST`: Nearest neighbor (fastest, lowest quality)
-  - `cv2.INTER_AREA`: Pixel area relation (best for shrinking)
-- **Returns**: Resized image
-- **Recommended**:
-  - Zooming in (enlarging): `INTER_CUBIC` or `INTER_LANCZOS4`
-  - Zooming out (shrinking): `INTER_AREA`
-
-#### 9.1.3 Complete Transform Pipeline
-
-Process:
-
-1. Calculate ROI from PTZ parameters (pan, tilt, zoom)
-2. Clamp ROI to frame boundaries
-3. Extract ROI: `roi = frame[y:y+h, x:x+w]`
-4. Resize to output dimensions: `output = cv2.resize(roi, (out_w, out_h), interpolation)`
-5. Return transformed frame
-
-### 9.2 Overlay Rendering (OpenCV)
-
-#### 9.2.1 Bounding Box Overlay
-
-Function: `cv2.rectangle(image, pt1, pt2, color, thickness)`
-
-- **image**: Frame to draw on (modified in-place)
-- **pt1**: Top-left corner (x, y)
-- **pt2**: Bottom-right corner (x+w, y+h)
-- **color**: BGR tuple
-  - Green: (0, 255, 0) - active tracking
-  - Yellow: (0, 255, 255) - acquiring
-  - Red: (0, 0, 255) - lost
-  - Cyan: (255, 255, 0) - recovering
-- **thickness**: 2 or 3 pixels (use -1 for filled rectangle)
-
-Alternative with corners:
-
-- `pt2 = (x+w, y+h)` where (x, y, w, h) is bounding box
-
-#### 9.2.2 Debug Mosaic View
-
-**Purpose**: Display processing pipeline stages side-by-side for debugging
-
-**Mosaic Layout** (2×4 or 3×3 grid):
-
-1. Original frame with detections
-2. Foreground mask (after background subtraction)
-3. After erosion
-4. After dilation
-5. After Gaussian blur
-6. After morphological closing
-7. After binary threshold (final mask)
-8. Virtual PTZ output
-
-**Implementation Steps:**
-
-1. **Prepare Individual Frames**
-
-   ```
-   Resize each stage to same size for mosaic:
-   - Target size: width//4, height//4 (quarter size)
-   - Use cv2.resize(image, (w, h), cv2.INTER_AREA)
-   ```
-
-2. **Convert Grayscale to Color** (for consistent display)
-
-   ```
-   For grayscale masks:
-   color_mask = cv2.cvtColor(gray_mask, cv2.COLOR_GRAY2BGR)
-   ```
-
-3. **Add Labels to Each Frame**
-
-   ```
-   cv2.putText(frame, "Stage Name", (10, 20),
-               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
-   ```
-
-4. **Create Mosaic using NumPy**
-
-   ```
-   Method 1 - Horizontal concatenation:
-   row1 = np.hstack([frame1, frame2, frame3, frame4])
-   row2 = np.hstack([frame5, frame6, frame7, frame8])
-   mosaic = np.vstack([row1, row2])
-
-   Method 2 - Using cv2.hconcat and cv2.vconcat:
-   row1 = cv2.hconcat([frame1, frame2, frame3, frame4])
-   row2 = cv2.hconcat([frame5, frame6, frame7, frame8])
-   mosaic = cv2.vconcat([row1, row2])
-   ```
-
-5. **Display Mosaic**
-
-   ```
-   cv2.imshow('Debug Pipeline Mosaic', mosaic)
-   ```
-
-**Example Stage Labels:**
-
-- "1. Original + Detections"
-- "2. FG Mask (Raw)"
-- "3. After Erosion"
-- "4. After Dilation"
-- "5. After Blur"
-- "6. After Closing"
-- "7. Final Mask"
-- "8. PTZ Output"
-
-**Configuration Toggle:**
-
-- Enable/disable via config: `display.show_debug_mosaic: true/false`
-- Separate window from main output
-- Optional: Save mosaic frames to video for debugging
-
-#### 9.2.3 Information Overlay (Text)
-
-Function: `cv2.putText(image, text, org, fontFace, fontScale, color, thickness, lineType)`
-
-- **image**: Frame to draw on
-- **text**: String to display
-- **org**: Bottom-left corner of text (x, y)
-- **fontFace**: Font type
-  - `cv2.FONT_HERSHEY_SIMPLEX`: Clean, readable
-  - `cv2.FONT_HERSHEY_COMPLEX`: More formal
-  - `cv2.FONT_HERSHEY_DUPLEX`: Monospace-like
-- **fontScale**: Size multiplier (0.5 to 2.0)
-- **color**: BGR tuple (255, 255, 255) for white
-- **thickness**: 1 or 2
-- **lineType**: `cv2.LINE_AA` for anti-aliased
-
-**Text Background** (for readability):
-Draw filled rectangle behind text:
-
-1. Calculate text size: `(w, h), baseline = cv2.getTextSize(text, font, scale, thickness)`
-2. Draw rectangle: `cv2.rectangle(image, (x, y-h-5), (x+w, y+5), (0,0,0), -1)`
-3. Draw text: `cv2.putText(image, text, (x, y), ...)`
-
-**Multi-line text example**:
-
-```
-Position text at (10, 30) with 25-pixel line spacing:
-cv2.putText(image, "State: TRACKING", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
-cv2.putText(image, "Pan: 15.2°", (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
-cv2.putText(image, "Tilt: -3.5°", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
-cv2.putText(image, "Zoom: 2.5x", (10, 105), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
+    return best_match
 ```
 
-#### 9.2.4 Trajectory Trail Overlay
+### 8.2 Timeout Handling
 
-Function: `cv2.polylines(image, pts, isClosed, color, thickness)`
+```python
+recovery_start_time = time.time()
+recovery_timeout = 3.0  # seconds
 
-- **pts**: List of trajectory points [(x1,y1), (x2,y2), ...]
-- **isClosed**: False for trajectory trail
-- **color**: (0, 255, 0) green
-- **thickness**: 2
+while state == State.LOST:
+    bbox = attempt_redetection(frame, last_bbox, config)
 
-Alternative (draw circles at each point):
-
-```
-For each point in trajectory:
-  cv2.circle(image, point, 3, (0, 255, 0), -1)
-```
-
-#### 9.2.5 Velocity Vector Overlay
-
-Draw arrow from current position in movement direction:
-Function: `cv2.arrowedLine(image, pt1, pt2, color, thickness, tipLength)`
-
-- **pt1**: Current object centroid
-- **pt2**: Predicted next position (centroid + velocity_vector)
-- **color**: (255, 0, 0) blue
-- **thickness**: 2
-- **tipLength**: 0.3 (arrow tip size ratio)
-
-#### 9.2.4 Tracking Visualization
-
-- **Trajectory Trail**: Show past N positions of tracked object
-- **Velocity Vector**: Arrow showing object movement direction
-- **Zoom Indicator**: Visual representation of current zoom level
-- **Deadband Zone**: Rectangle showing center deadband area
-
-### 9.3 Debug Mosaic Display
-
-The debug mosaic replaces traditional multi-view display with a comprehensive 2×4 grid showing all pipeline stages:
-
-**Mosaic Layout (8 frames):**
-
-1. **Original + Detections**: Original frame with bounding boxes
-2. **FG Mask (Raw)**: Foreground mask after background subtraction
-3. **After Erosion**: Mask after noise removal
-4. **After Dilation**: Mask after object restoration
-5. **After Blur**: Mask after Gaussian smoothing
-6. **After Closing**: Mask after hole filling
-7. **Final Mask**: Binary mask after threshold (used for detection)
-8. **PTZ Output**: Final virtual PTZ view with tracking info
-
-**Benefits:**
-
-- Complete pipeline visualization in single window
-- Easy debugging of each processing stage
-- Identify issues at specific pipeline steps
-- Compare input vs output
-- Toggle on/off with 'D' key during runtime
-
-### 9.4 Color Space Handling
-
-- **Internal Processing**: BGR (OpenCV default)
-- **Display Output**: BGR for video, RGB for GUI frameworks
-- **Conversion**: Automatic when required
-
----
-
-## 10. VIDEO INPUT/OUTPUT MODULE (OpenCV)
-
-### 10.1 Video Input Implementation
-
-#### 10.1.1 Video Capture Initialization
-
-Function: `cv2.VideoCapture(filename)`
-
-- **filename**: Path to video file
-- **Returns**: VideoCapture object
-- **Check success**: `if cap.isOpened():`
-
-Example:
-
-```
-cap = cv2.VideoCapture("input_video.mp4")
-if not cap.isOpened():
-    # Handle error
-```
-
-#### 10.1.2 Get Video Properties
-
-Functions:
-
-- `cap.get(cv2.CAP_PROP_FRAME_WIDTH)` - frame width
-- `cap.get(cv2.CAP_PROP_FRAME_HEIGHT)` - frame height
-- `cap.get(cv2.CAP_PROP_FPS)` - frames per second
-- `cap.get(cv2.CAP_PROP_FRAME_COUNT)` - total frame count
-- `cap.get(cv2.CAP_PROP_FOURCC)` - codec fourcc code
-- `cap.get(cv2.CAP_PROP_POS_FRAMES)` - current frame position
-
-Convert to integers where needed:
-
-```
-width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-fps = cap.get(cv2.CAP_PROP_FPS)
-```
-
-#### 10.1.3 Frame Reading
-
-Function: `cap.read()`
-
-- **Returns**: Tuple (ret, frame)
-  - **ret**: Boolean (True if frame read successfully)
-  - **frame**: NumPy array (BGR format) or None
-- **Usage pattern**:
-
-  ```
-  ret, frame = cap.read()
-  if not ret:
-      # End of video or error
-      break
-  # Process frame
-  ```
-
-#### 10.1.4 Advanced Input Operations
-
-- **Seek to frame**: `cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)`
-- **Seek to millisecond**: `cap.set(cv2.CAP_PROP_POS_MSEC, milliseconds)`
-- **Release**: `cap.release()` - close video file
-
-#### 10.1.5 Loop Playback Implementation
-
-```
-When ret == False (end of video):
-  cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset to beginning
-  continue
-```
-
-#### 10.1.6 Frame Skipping
-
-Process every Nth frame:
-
-```
-frame_counter = 0
-while True:
-    ret, frame = cap.read()
-    if not ret:
+    if bbox is not None:
+        # Reacquired!
+        tracker = initialize_csrt(frame, bbox)
+        state = State.TRACKING
         break
-    if frame_counter % N == 0:
-        # Process this frame
-    frame_counter += 1
-```
 
-### 10.2 Video Output Implementation
-
-#### 10.2.1 Video Writer Initialization
-
-Function: `cv2.VideoWriter(filename, fourcc, fps, frameSize, isColor)`
-
-- **filename**: Output file path
-- **fourcc**: Codec code from `cv2.VideoWriter_fourcc()`
-- **fps**: Frame rate (match input or custom)
-- **frameSize**: (width, height) tuple
-- **isColor**: True for color, False for grayscale
-- **Returns**: VideoWriter object
-
-#### 10.2.2 Codec Selection (FourCC)
-
-Function: `cv2.VideoWriter_fourcc(*'XXXX')`
-
-Common codecs:
-
-- `cv2.VideoWriter_fourcc(*'mp4v')` - MPEG-4 (.mp4)
-- `cv2.VideoWriter_fourcc(*'X264')` - H.264 (.mp4)
-- `cv2.VideoWriter_fourcc(*'XVID')` - XVID (.avi)
-- `cv2.VideoWriter_fourcc(*'MJPG')` - Motion JPEG (.avi)
-- `cv2.VideoWriter_fourcc(*'H264')` - H.264 variant
-
-**Recommended**:
-
-- **Best quality**: 'X264' or 'H264' for .mp4
-- **Best compatibility**: 'MJPG' for .avi
-- **Fast writing**: 'MJPG'
-
-Example:
-
-```
-fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter('output.mp4', fourcc, 30.0, (640, 480))
-```
-
-#### 10.2.3 Writing Frames
-
-Function: `out.write(frame)`
-
-- **frame**: NumPy array (must match frameSize and isColor)
-- **No return value**
-- Frame must be correct size and type (BGR if isColor=True)
-
-Example:
-
-```
-for each frame:
-    # Process frame
-    out.write(processed_frame)
-```
-
-#### 10.2.4 Finalizing Output
-
-Function: `out.release()`
-
-- Finalizes and closes video file
-- **Must call** before program ends or file may be corrupted
-
-#### 10.2.5 Complete Video I/O Pattern
-
-```
-# Input
-cap = cv2.VideoCapture("input.mp4")
-width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-fps = cap.get(cv2.CAP_PROP_FPS)
-
-# Output
-fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter('output.mp4', fourcc, fps, (width, height))
-
-# Process loop
-while True:
-    ret, frame = cap.read()
-    if not ret:
+    if time.time() - recovery_start_time > recovery_timeout:
+        # Give up
+        state = State.DETECTION
         break
-    # Process frame
-    processed = process_frame(frame)
-    out.write(processed)
-
-# Cleanup
-cap.release()
-out.release()
 ```
-
-### 10.3 Display Window (OpenCV)
-
-#### 10.3.1 Create Window
-
-Function: `cv2.namedWindow(window_name, flags)`
-
-- **window_name**: String identifier
-- **flags**:
-  - `cv2.WINDOW_NORMAL` - resizable
-  - `cv2.WINDOW_AUTOSIZE` - fixed size (default)
-  - `cv2.WINDOW_FULLSCREEN` - fullscreen mode
-
-#### 10.3.2 Display Frame
-
-Function: `cv2.imshow(window_name, frame)`
-
-- **window_name**: Window identifier (creates if doesn't exist)
-- **frame**: Image to display (NumPy array)
-
-#### 10.3.3 Wait for Key Input
-
-Function: `cv2.waitKey(delay)`
-
-- **delay**: Milliseconds to wait (1 for ~real-time, 0 for infinite)
-- **Returns**: ASCII code of key pressed, or -1 if no key
-- **Usage**: Must call to update window display
-
-Example:
-
-```
-key = cv2.waitKey(1) & 0xFF
-if key == ord('q'):
-    break  # Quit
-elif key == ord(' '):
-    paused = not paused  # Toggle pause
-```
-
-#### 10.3.4 Close Windows
-
-- `cv2.destroyWindow(window_name)` - close specific window
-- `cv2.destroyAllWindows()` - close all OpenCV windows
 
 ---
 
-## 11. CONFIGURATION SYSTEM
+## 9. PTZ CONTROL
 
-### 11.1 Configuration File Format
+### 9.1 Controller Class Structure
 
-- **Format**: JSON or YAML
-- **Location**: Configuration file in project directory
-- **Structure**: Hierarchical sections matching modules
+```python
+class PTZController:
+    def __init__(self, frame_shape, config):
+        self.frame_shape = frame_shape  # (height, width)
+        self.pan = 0.0
+        self.tilt = 0.0
+        self.zoom = 1.0
+        self.config = config
 
-### 11.2 Configuration Parameters Structure
+    def update(self, bbox):
+        """Update PTZ based on object bbox"""
+        # Calculate object center
+        cx = bbox[0] + bbox[2] / 2
+        cy = bbox[1] + bbox[3] / 2
 
-#### Background Subtraction Section
+        # Calculate error from frame center
+        error_x = (cx - self.frame_shape[1]/2) / self.frame_shape[1]
+        error_y = (cy - self.frame_shape[0]/2) / self.frame_shape[0]
 
-```
-background_subtraction:
-  algorithm: string  # Algorithm name, e.g. "MOG2", "KNN"
+        # Apply deadband
+        deadband = self.config['deadband']
+        if abs(error_x) > deadband:
+            self.pan += error_x * self.config['pan_sensitivity']
+        if abs(error_y) > deadband:
+            self.tilt += error_y * self.config['tilt_sensitivity']
 
-  # OpenCV-specific parameters
-  history: integer (100-1000, default: 500)
-  var_threshold: float (4.0-50.0, default: 16.0)  # For MOG2
-  dist2_threshold: float (200-800, default: 400.0)  # For KNN
-  detect_shadows: boolean (default: true)
-  learning_rate: float (-1.0 for auto, 0.0001-0.1, default: -1)
-```
+        # Calculate zoom
+        object_area = bbox[2] * bbox[3]
+        frame_area = self.frame_shape[0] * self.frame_shape[1]
+        target_fraction = self.config['target_object_size']
+        target_area = frame_area * target_fraction
 
-#### Mask Post-Processing Section
+        self.zoom = np.sqrt(target_area / object_area)
+        self.zoom = np.clip(self.zoom,
+                           self.config['zoom_min'],
+                           self.config['zoom_max'])
 
-```
-mask_processing:
-  enable: boolean (default: true)
-  kernel_size: integer (3, 5, 7, 9, default: 5)
-  erosion_iterations: integer (default: 1)
-  dilation_iterations: integer (default: 1)
-  gaussian_blur_kernel: integer (3, 5, 7, must be odd, default: 3)
-  threshold_value: integer (100-150, default: 130)
-```
+    def extract_roi(self, frame):
+        """Extract ROI based on current PTZ state"""
+        h, w = self.frame_shape
 
-Pipeline sequence: Erosion → Dilation → Gaussian Blur → Closing → Threshold
+        # ROI size based on zoom
+        roi_w = int(w / self.zoom)
+        roi_h = int(h / self.zoom)
 
-#### Object Detection Section
+        # ROI center based on pan/tilt
+        center_x = w // 2 + int(self.pan * w / 90)
+        center_y = h // 2 + int(self.tilt * h / 90)
 
-```
-object_detection:
-  min_area: integer (pixels)
-  max_area: float (0.0-1.0, fraction of frame)
-  min_aspect_ratio: float
-  max_aspect_ratio: float
-  min_solidity: float (0.0-1.0)
-  selection_strategy: "largest" | "center" | "previous"
-```
+        # ROI top-left
+        roi_x = max(0, min(center_x - roi_w // 2, w - roi_w))
+        roi_y = max(0, min(center_y - roi_h // 2, h - roi_h))
 
-#### Tracking Section
+        # Extract and resize
+        roi = frame[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w]
+        output = cv2.resize(roi, (w, h), interpolation=cv2.INTER_LINEAR)
 
-```
-tracking:
-  acquisition_frames: integer (1-10)
-  lost_frames_threshold: integer (5-30)
-  recovery_timeout: float (seconds)
-  deadband_x: float (0.0-0.2, fraction)
-  deadband_y: float (0.0-0.2, fraction)
-```
-
-#### PTZ Control Section
-
-```
-ptz_control:
-  pan_sensitivity: float (10.0-90.0 degrees)
-  tilt_sensitivity: float (10.0-90.0 degrees)
-  max_pan_speed: float (degrees per frame)
-  max_tilt_speed: float (degrees per frame)
-  min_zoom: float (1.0)
-  max_zoom: float (1.0-10.0)
-  zoom_speed: float (0.01-0.2)
-  smoothing_factor: float (0.0-1.0)
+        return output
 ```
 
-#### Display Section
+### 9.2 Deadband Zone
+
+Prevents jitter when object is near center:
 
 ```
-display:
-  show_bounding_box: boolean
-  show_crosshair: boolean
-  show_info_overlay: boolean
-  show_trajectory: boolean
-  show_original: boolean
-  show_mask: boolean
-  output_width: integer
-  output_height: integer
+        ┌────────────────────────┐
+        │                        │
+        │    ┌──────────┐        │
+        │    │          │        │
+        │    │ Deadband │        │  ← No adjustment
+        │    │   Zone   │        │     in this area
+        │    │          │        │
+        │    └──────────┘        │
+        │                        │
+        └────────────────────────┘
 ```
 
-#### Video I/O Section
+Default: ±5% of frame dimension
+
+### 9.3 Smoothing
+
+Optional exponential smoothing:
+
+```python
+alpha = 0.3  # Smoothing factor
+pan = alpha * new_pan + (1 - alpha) * previous_pan
+tilt = alpha * new_tilt + (1 - alpha) * previous_tilt
+zoom = alpha * new_zoom + (1 - alpha) * previous_zoom
+```
+
+---
+
+## 10. DEBUG MOSAIC
+
+### 10.1 Layout (2×4 Grid)
 
 ```
+┌─────────────┬─────────────┬─────────────┬─────────────┐
+│ 1. Original │ 2. FG Mask  │ 3. Cleaned  │ 4. Contours │
+│             │    (Raw)    │    Mask     │             │
+├─────────────┼─────────────┼─────────────┼─────────────┤
+│ 5. Norfair  │ 6. CSRT     │ 7. PTZ ROI  │ 8. Final    │
+│  Detection  │  Tracking   │   Overlay   │   Output    │
+└─────────────┴─────────────┴─────────────┴─────────────┘
+```
+
+### 10.2 Implementation
+
+See `debug_view.py`:
+
+```python
+from debug_view import DebugMosaic
+
+# Initialize
+debug = DebugMosaic(config)
+
+# In main loop
+pipeline_stages = {
+    'original': frame.copy(),
+    'fg_mask_raw': fg_mask_raw,
+    'fg_mask_clean': fg_mask_clean,
+    'contours': contours_frame,
+    'detection': detection_frame,
+    'tracking': tracking_frame,
+    'ptz_roi': ptz_roi_overlay,
+    'final': final_output
+}
+
+mosaic = debug.create_mosaic(pipeline_stages)
+cv2.imshow("Debug Pipeline", mosaic)
+```
+
+### 10.3 Toggle During Runtime
+
+Press **'D'** key to toggle on/off
+
+---
+
+## 11. CONFIGURATION
+
+### 11.1 config.yaml Structure
+
+```yaml
+# Video I/O
 video:
-  input_path: string
-  output_path: string
-  output_codec: "H264" | "MJPEG"
-  save_output: boolean
-  loop_playback: boolean
-  process_every_n_frames: integer (1 = all frames)
-```
+  input: "input.mp4"
+  output: "output.mp4"
+  output_codec: "mp4v"
+  save_output: true
+  loop_playback: false
 
-### 11.3 Runtime Configuration
+# Background Subtraction (OpenCV only)
+background_subtraction:
+  algorithm: "MOG2"  # MOG2 or KNN
+  history: 500
+  learning_rate: -1  # -1 for automatic
 
-- **Hot Reload**: Reload configuration without restart (optional)
-- **Command-line Override**: Override config file with CLI arguments
-- **Validation**: Schema validation on load
-- **Defaults**: Fallback values for all parameters
+# Object Detection
+object_detection:
+  min_area: 500
+  max_area_fraction: 0.5
 
----
+# Tracking
+tracking:
+  tracker: "KCF"  # KCF (fast) or CSRT (accurate)
 
-## 12. PERFORMANCE REQUIREMENTS
+  # Norfair multi-object settings
+  norfair:
+    distance_threshold: 50
+    hit_counter_max: 10
+    initialization_delay: 3
 
-### 12.1 Processing Speed
+  # Selection
+  selection:
+    min_track_age: 5
 
-- **Target Frame Rate**:
-  - 30 fps for 720p video (real-time)
-  - 15 fps minimum for 1080p video
-- **Latency**: Maximum 100ms from frame capture to display
-- **Startup Time**: <3 seconds to begin processing
+  # Recovery
+  recovery:
+    search_radius: 150
+    size_similarity_threshold: 0.5
+    timeout: 3.0
 
-### 12.2 Resource Utilization
+# PTZ Control
+ptz:
+  pan_sensitivity: 45.0
+  tilt_sensitivity: 30.0
+  zoom_min: 1.0
+  zoom_max: 5.0
+  deadband: 0.05
+  target_object_size: 0.3
 
-- **CPU Usage**: <80% of single core for 720p
-- **Memory**: <500 MB for 1080p processing
-- **Disk I/O**: Sufficient for video read/write without dropping frames
+# Display
+display:
+  show_window: true
+  show_info: true
+  show_debug_mosaic: true
 
-### 12.3 Scalability
-
-- **Resolution Independence**: Work with any resolution (within memory limits)
-- **Frame Rate Independence**: Adapt to input video frame rate
-- **Multi-threading**: Optional parallel processing for performance boost
-
----
-
-## 13. ERROR HANDLING AND RECOVERY
-
-### 13.1 Input Validation
-
-- **Video File Existence**: Check before processing
-- **Video Format Support**: Verify codec compatibility
-- **Configuration Validation**: Check for invalid parameter values
-- **Error Messages**: Clear, actionable error descriptions
-
-### 13.2 Runtime Error Handling
-
-- **Frame Read Failure**:
-  - Skip corrupted frame
-  - Log error and continue
-  - Abort if consecutive failures exceed threshold
-- **Object Detection Failure**:
-  - Return to IDLE state
-  - Reset background model if persistent
-- **PTZ Calculation Errors**:
-  - Clamp to valid ranges
-  - Log warning
-  - Continue with constrained values
-
-### 13.3 Recovery Mechanisms
-
-- **Tracking Loss Recovery**:
-  - Expand search area
-  - Reduce background subtraction threshold
-  - Reset to wide view (zoom out)
-- **Background Model Reset**:
-  - Automatic reset on scene change
-  - Manual reset command
-- **Graceful Degradation**:
-  - Reduce frame rate if processing falls behind
-  - Disable non-essential overlays for performance
-
-### 13.4 Logging
-
-The system uses **loguru** for logging, which provides a simplified and more powerful logging experience compared to the standard Python logging module.
-
-**Key Features**:
-- **Automatic formatting**: Beautiful, colored output with timestamps
-- **Easy configuration**: Simple API without handlers, formatters, or filters
-- **File rotation**: Built-in support for size and time-based rotation
-- **Contextual logging**: Easy to add context information to logs
-- **Exception handling**: Better exception logging with full traceback
-
-**Log Levels**: TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, CRITICAL
-
-**Basic Usage**:
-```python
-from loguru import logger
-
-logger.debug("Debug message")
-logger.info("Info message")
-logger.success("Success message")
-logger.warning("Warning message")
-logger.error("Error message")
-```
-
-**Configuration**:
-```python
-from loguru import logger
-
-# Remove default handler
-logger.remove()
-
-# Add console handler with custom format
-logger.add(
-    sys.stderr,
-    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-    level="INFO"
-)
-
-# Add file handler with rotation
-logger.add(
-    "logs/tracking.log",
-    rotation="10 MB",  # Rotate when file reaches 10 MB
-    retention="7 days",  # Keep logs for 7 days
-    compression="zip",  # Compress rotated logs
-    level="DEBUG"
-)
-```
-
-**Rotation Options**:
-- **Size-based**: `rotation="10 MB"` - Rotate when file reaches size
-- **Time-based**: `rotation="1 day"` - Rotate daily at midnight
-- **Time-specific**: `rotation="00:00"` - Rotate at specific time
-- **Combined**: Can use both size and time conditions
-
-**Contextual Logging**:
-```python
-# Add context to all subsequent logs
-with logger.contextualize(frame_id=123):
-    logger.info("Processing frame")  # Will include frame_id in log
-
-# Bind context permanently
-logger = logger.bind(module="tracking")
-logger.info("Tracking update")  # Will include module in all logs
+  debug_mosaic:
+    tile_width: 320
+    tile_height: 240
 ```
 
 ---
 
-## 14. DATA STRUCTURES
+## 12. KEYBOARD CONTROLS
 
-### 14.1 Object Detection Result
-
-```
-DetectedObject:
-  - centroid: (x: float, y: float)
-  - bounding_box: (x: int, y: int, width: int, height: int)
-  - area: float
-  - contour: array of points
-  - confidence: float (0.0-1.0)
-  - timestamp: float
-  - id: integer (optional, for multi-object tracking)
-```
-
-### 14.2 PTZ State
-
-```
-PTZState:
-  - pan: float (degrees)
-  - tilt: float (degrees)
-  - zoom: float (magnification)
-  - pan_velocity: float (degrees per second)
-  - tilt_velocity: float (degrees per second)
-  - zoom_velocity: float (zoom units per second)
-  - roi: (x: int, y: int, width: int, height: int)
-  - timestamp: float
-```
-
-### 14.3 Tracking State
-
-```
-TrackingState:
-  - status: enum (IDLE, ACQUIRING, TRACKING, LOST, RECOVERING)
-  - target_object: DetectedObject or null
-  - frames_since_detection: integer
-  - confidence: float (0.0-1.0)
-  - trajectory: array of (x, y, timestamp) tuples
-  - acquisition_counter: integer
-  - lost_counter: integer
-```
-
-### 14.4 Frame Metadata
-
-```
-FrameMetadata:
-  - frame_number: integer
-  - timestamp: float
-  - frame_shape: (height: int, width: int, channels: int)
-  - ptz_state: PTZState
-  - tracking_state: TrackingState
-  - detections: array of DetectedObject
-  - processing_time: float (milliseconds)
-```
+| Key | Action | Available In |
+|-----|--------|--------------|
+| **0-9** | Select object by ID | DETECTION |
+| **R** | Reset to DETECTION mode | All states |
+| **D** | Toggle debug mosaic | All states |
+| **Space** | Pause/Resume | All states |
+| **Q / ESC** | Quit application | All states |
 
 ---
 
-## 15. PROCESSING PIPELINE SEQUENCE
+## 13. DEPENDENCIES
 
-### 15.1 Initialization Phase
+### 13.1 Requirements
 
-1. Load configuration from file
-2. Validate configuration parameters
-3. Open video input source
-4. Read first frame to get dimensions
-5. Initialize background subtraction model
-6. Initialize PTZ state (pan=0, tilt=0, zoom=1.0)
-7. Initialize tracking state (status=IDLE)
-8. Create video writer for output (if enabled)
-9. Initialize display window
-
-### 15.2 Main Processing Loop
-
-For each frame:
-
-1. **Capture Frame**
-
-   - Read next frame from video
-   - If end of video: handle based on loop setting
-   - Extract timestamp or calculate from frame number
-
-2. **Preprocessing**
-
-   - Resize if needed (optional)
-   - Convert to appropriate color space
-   - Apply noise reduction (optional, e.g., Gaussian blur)
-
-3. **Background Subtraction**
-
-   - Apply background subtraction algorithm
-   - Get foreground mask
-   - Update background model with current frame
-
-4. **Foreground Mask Processing**
-
-   - Apply binary threshold
-   - Perform morphological operations (opening, closing)
-   - Remove shadows (if enabled)
-
-5. **Object Detection**
-
-   - Find contours in processed mask
-   - Filter contours by size, shape criteria
-   - Calculate bounding boxes and centroids
-   - Generate DetectedObject instances
-
-6. **Object Selection**
-
-   - Apply selection strategy to choose target
-   - If multiple objects: prioritize based on criteria
-   - If no objects: return null
-
-7. **Tracking Update**
-
-   - Update tracking state based on detection
-   - Perform state transitions
-   - Update confidence score
-   - Associate detection with previous target (if applicable)
-
-8. **PTZ Control Calculation**
-
-   - If tracking: calculate error from frame center
-   - Compute pan, tilt, zoom adjustments
-   - Apply smoothing and limiting
-   - Update PTZ state
-   - Calculate new ROI
-
-9. **Frame Rendering**
-
-   - Extract ROI from original frame
-   - Resize to output dimensions
-   - Apply interpolation
-
-10. **Overlay Rendering**
-
-    - Draw bounding boxes
-    - Draw information text
-    - Draw trajectory (if enabled)
-
-11. **Debug Mosaic** (if enabled)
-
-    - Create 2×4 grid showing pipeline stages
-    - Display in separate window
-
-12. **Output**
-
-    - Display frame in window
-    - Write frame to output video (if enabled)
-    - Log frame metadata (if enabled)
-
-13. **User Input Handling**
-
-    - Check for keyboard input
-    - Handle pause, reset, quit commands
-    - Adjust parameters if interactive mode enabled
-
-14. **Performance Monitoring**
-    - Calculate frame processing time
-    - Update FPS counter
-    - Adjust processing if falling behind (optional)
-
-### 15.3 Cleanup Phase
-
-1. Release video input source
-2. Release video output writer
-3. Close display windows
-4. Save final logs and statistics
-5. Export PTZ trajectory data (optional)
-
----
-
-## 16. USER INTERFACE
-
-### 16.1 Display Window
-
-- **Main Window**: Shows virtual PTZ output with overlays
-- **Size**: Configurable, default 800×600
-- **Title**: Application name and current status
-- **Refresh Rate**: Match video frame rate
-
-### 16.2 Keyboard Controls
-
-- **Space**: Pause/resume playback
-- **R**: Release lock (return to detection mode) and reset PTZ
-- **B**: Reset background model
-- **D**: Toggle debug mosaic view
-- **Q/Esc**: Quit application
-- **S**: Save current frame as image (optional)
-- **+/-**: Manually adjust zoom level (optional)
-- **Arrow Keys**: Manually adjust pan/tilt (when in manual mode, optional)
-- **M**: Toggle between auto and manual PTZ mode (optional)
-- **O**: Toggle overlays on/off (optional)
-- **F**: Toggle fullscreen mode (optional)
-
-### 16.3 Object Selection Controls
-
-- **Number Keys (0-9)**: Select and lock onto tracked object by ID (transitions from DETECTION_MODE to LOCKED_MODE)
-  - Each tracked object displays its ID number on screen (cyan text)
-  - Press the corresponding number key (0-9) to lock onto that object
-  - Object will be locked using CSRT tracker
-  - Green bounding box indicates locked object
-  - Only available in DETECTION_MODE
-
-### 16.4 Status Display
-
-Real-time information shown in overlay:
-
-- Current tracking state
-- Pan angle (degrees)
-- Tilt angle (degrees)
-- Zoom level (magnification)
-- Target object size (pixels)
-- Processing FPS
-- Frame number / total frames
-
----
-
-## 17. OUTPUT DATA AND LOGGING
-
-### 17.1 Video Output
-
-- **Primary Output**: Virtual PTZ view video file
-- **Debug Output** (optional): Side-by-side comparison video
-- **Mask Output** (optional): Foreground mask video
-
-### 17.2 Telemetry Log
-
-CSV or JSON file containing per-frame data:
-
-- Frame number
-- Timestamp
-- Pan angle
-- Tilt angle
-- Zoom level
-- Tracking state
-- Object centroid (x, y)
-- Object bounding box (x, y, w, h)
-- Object area
-- Confidence score
-- Processing time (ms)
-
-### 17.3 Event Log
-
-Text log file managed by loguru containing:
-
-- Application start/stop events
-- Configuration changes
-- State transitions (IDLE→TRACKING, etc.)
-- Errors and warnings with full stack traces
-- Performance metrics summary
-- Automatic file rotation based on size or time
-- Compressed archives of rotated logs
-
-**Log Format** (customizable):
-```
-2025-11-07 10:23:45 | INFO     | src.tracking:update:123 - Transitioning to LOCKED_MODE
-2025-11-07 10:23:46 | SUCCESS  | src.csrt:init:45 - CSRT tracker initialized successfully
-2025-11-07 10:23:50 | WARNING  | src.csrt:update:67 - Tracking quality degraded
-2025-11-07 10:23:51 | ERROR    | src.csrt:update:72 - CSRT tracking lost
+```txt
+opencv-python>=4.5.0
+numpy>=1.19.0
+norfair>=2.0.0
+pyyaml>=5.0
 ```
 
-Loguru automatically includes:
-- Timestamp with millisecond precision
-- Log level with color coding (in console)
-- Source module, function, and line number
-- Full exception tracebacks when logging errors
+### 13.2 Installation
 
-### 17.4 Statistics Summary
+**With pip:**
+```bash
+pip install -r requirements.txt
+```
 
-Final statistics file (JSON) containing:
-
-- Total frames processed
-- Average FPS
-- Tracking success rate (% of frames with active tracking)
-- Average pan, tilt, zoom values
-- Number of tracking losses and recoveries
-- Processing time distribution (min, max, mean, median)
-
----
-
-## 18. TESTING REQUIREMENTS
-
-### 18.1 Unit Testing
-
-Test individual components:
-
-- Background subtraction with synthetic sequences
-- Object detection with known objects
-- PTZ calculations with known inputs
-- Coordinate transformations
-- Configuration loading and validation
-
-### 18.2 Integration Testing
-
-Test component interactions:
-
-- Full pipeline with sample videos
-- State transitions under various scenarios
-- Error handling and recovery
-- Configuration changes during runtime
-
-### 18.3 Performance Testing
-
-- Benchmark processing speed on various resolutions
-- Memory usage monitoring
-- CPU utilization profiling
-- Frame drop detection
-
-### 18.4 Test Scenarios
-
-Provide test videos covering:
-
-- **Simple Scene**: Single person walking, static background
-- **Complex Scene**: Multiple moving objects, dynamic background
-- **Challenging Conditions**:
-  - Low contrast
-  - Rapid lighting changes
-  - Camera shake (in original video)
-  - Occlusions
-  - Objects entering/leaving frame
-
-### 18.5 Validation Criteria
-
-- **Tracking Accuracy**: Object stays centered within ±10% of frame
-- **Tracking Stability**: No excessive jitter (measured by pan/tilt variance)
-- **Recovery Time**: Reacquire tracking within 2 seconds of loss
-- **False Positive Rate**: <5% false detections on test set
-
----
-
-## 19. FUTURE ENHANCEMENTS (Out of Scope for Initial Version)
-
-### 19.1 Advanced Object Detection
-
-- Deep learning-based detection (YOLO, SSD)
-- Multi-object tracking
-- Object classification (person, vehicle, animal, etc.)
-- Specific object filtering
-
-### 19.2 Advanced Tracking
-
-- Kalman filter for motion prediction
-- Optical flow for motion estimation
-- Appearance-based tracking (color histograms, HOG)
-- Object persistence across occlusions
-
-### 19.3 Physical Camera Integration
-
-- PTZ camera protocol support (ONVIF, Visca, PELCO-D)
-- Network camera streaming (RTSP, HTTP)
-- Real-time camera control commands
-- Camera preset positions
-
-### 19.4 Advanced PTZ Control
-
-- Trajectory prediction and anticipation
-- Multi-zone tracking
-- Auto-patrol patterns when no object detected
-- Smooth cinematic camera movements
-
-### 19.5 User Interface Enhancements
-
-- GUI configuration editor
-- Real-time parameter adjustment sliders
-- Multiple camera view support
-- Playback controls (seek, speed adjustment)
-
-### 19.6 Analytics and Reporting
-
-- Heatmaps of object movement
-- Dwell time analysis
-- Event detection (object entering/leaving zones)
-- Automated highlights extraction
-
----
-
-## 21. DEVELOPMENT GUIDELINES
-
-### 21.1 Programming Language
-
-- **Primary**: Python 3.8+
-- **Rationale**: Rich ecosystem for computer vision (OpenCV, NumPy)
-
-### 21.2 Environment Management with Pixi
-
-#### 21.2.1 Why Pixi?
-
-- **Modern package manager**: Fast, reproducible environments
-- **Cross-platform**: Works on Windows, Linux, macOS
-- **Lock files**: Ensures reproducible builds
-- **Conda + PyPI**: Access to both conda-forge and PyPI packages
-- **Task runner**: Built-in task execution
-- **No separate venv**: Automatic environment isolation
-
-#### 21.2.2 Pixi Installation
-
-Visit: <https://pixi.sh> or install via:
-
-'''bash
-
-# Linux/macOS
-
-curl -fsSL https://pixi.sh/install.sh | bash
-
-# Windows (PowerShell)
-
-iwr -useb https://pixi.sh/install.ps1 | iex
-
-# Verify installation
-
-pixi --version
-'''
-
-#### 21.2.3 Project Dependencies
-
-**Required Libraries:**
-
-- **opencv**: Computer vision library (from conda-forge)
-  - Provides: cv2 module, video I/O, image processing
-  - Version: 4.5+
-- **numpy**: Numerical computing
-  - Version: 1.19+
-  - Used for: Array operations, numerical computations
-- **loguru**: Modern logging library (from PyPI)
-  - Version: 0.7+
-  - Used for: Application logging with automatic rotation and formatting
-  - Install: `pip install loguru` or `pixi add --pypi loguru`
-- **norfair**: Multi-object tracking library (from PyPI)
-  - Version: 2.0+
-  - Used for: Multi-object tracking in DETECTION_MODE
-  - Install: `pip install norfair` or `pixi add --pypi norfair`
-- **pyyaml**: YAML configuration support
-  - Version: 5.0+
-  - Used for: Configuration file parsing
-- **python**: Python interpreter
-  - Version: 3.8-3.11 recommended
-
-**Optional Libraries:**
-
-- **matplotlib**: Visualization and plotting
-  - For: Offline analysis, trajectory visualization
-- **pandas**: Data analysis and telemetry processing
-  - For: CSV/JSON log analysis
-
-**Development Tools:**
-
-- **ipython**: Enhanced interactive shell
-- **pytest**: Testing framework (for unit tests)
-
-#### 21.2.4 Pixi Configuration File (pixi.toml)
-
-Create `pixi.toml` in project root:
-
+**With Pixi (recommended):**
 ```toml
-[project]
-name = "ptz-tracker"
-version = "0.1.0"
-description = "PTZ Camera Object Tracking System with Background Subtraction"
-authors = ["Your Name <your.email@example.com>"]
-channels = ["conda-forge"]
-platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
-
 [dependencies]
 python = ">=3.8,<3.12"
 opencv = ">=4.5"
@@ -2411,317 +791,108 @@ numpy = ">=1.19"
 pyyaml = ">=5.0"
 
 [pypi-dependencies]
-loguru = ">=0.7.0"
 norfair = ">=2.0.0"
-
-[feature.viz.dependencies]
-matplotlib = ">=3.5"
-pandas = ">=1.3"
-
-[feature.dev.dependencies]
-ipython = "*"
-pytest = ">=7.0"
-
-[tasks]
-track = "python main.py"
-track-config = "python main.py --config config.yaml"
-test = "pytest tests/"
-shell = "ipython"
-clean = "rm -rf output/*.mp4 logs/*.log"
-
-[environments]
-default = {features = ["dev", "viz"]}
 ```
 
-#### 21.2.5 Project Setup with Pixi
-
-**Initial Setup:**
-
-'''bash
-
-# Navigate to project directory
-
-cd PTZ_tracker_dumb
-
-# Initialize Pixi project (if not already done)
-
-pixi init
-
-# Or use the pixi.toml above and install
-
+```bash
 pixi install
-'''
-
-**Running the Application:**
-
-'''bash
-
-# Run main tracking application
-
-pixi run track
-
-# Run with specific config file
-
-pixi run track-config
-
-# Or run Python directly in Pixi environment
-
 pixi run python main.py
+```
 
-# Run with arguments
+---
 
-pixi run python main.py --input video.mp4 --output result.mp4
-'''
+## 14. PERFORMANCE TARGETS
 
-**Development Workflow:**
+### 14.1 Frame Rate
 
-'''bash
+- **720p (1280×720)**: ≥30 FPS
+- **1080p (1920×1080)**: ≥20 FPS
 
-# Enter Pixi shell (activates environment)
+### 14.2 Latency
 
-pixi shell
+- Frame to display: <50ms
 
-# Now you're in the environment, run commands normally:
+### 14.3 Resource Usage
 
-python main.py
-ipython
-pytest tests/
+- **Memory**: <500 MB
+- **CPU**: <80% of single core
 
-# Exit shell
+---
 
-exit
-'''
-
-**Managing Dependencies:**
-
-'''bash
-
-# Add a new dependency
-
-pixi add scipy
-
-# Add PyPI package
-
-pixi add --pypi scikit-image
-
-# Remove dependency
-
-pixi remove scipy
-
-# Update all dependencies
-
-pixi update
-
-# Show installed packages
-
-pixi list
-'''
-
-#### 21.2.6 Environment Isolation
-
-Pixi automatically handles environment isolation:
-
-- **No manual venv activation needed**
-- **Reproducible across machines** via `pixi.lock` file
-- **Automatic environment selection** based on tasks/commands
-- **Per-project environments** (not system-wide)
-
-#### 21.2.7 Cross-Platform Compatibility
-
-Pixi ensures the project works across platforms:
-
-'''bash
-
-# On Linux
-
-pixi run track
-
-# On macOS (ARM or Intel)
-
-pixi run track
-
-# On Windows
-
-pixi run track
-'''
-
-Same commands, same results!
-
-#### 21.2.8 Quick Start Commands
-
-'''bash
-
-# Clone and setup
-
-git clone <repository-url>
-cd PTZ_tracker_dumb
-pixi install
-
-# Run application
-
-pixi run track
-
-# Run with custom video
-
-pixi run python main.py --input path/to/video.mp4
-
-# Development mode
-
-pixi shell
-python main.py # Run inside Pixi shell
-
-# Run tests
-
-pixi run test
-'''
-
-### 21.3 Project Structure
+## 15. FILE STRUCTURE
 
 ```
 PTZ_tracker_dumb/
-├── pixi.toml                      # Pixi project configuration
-├── pixi.lock                      # Pixi lock file (auto-generated)
-├── config.yaml                    # Application configuration
-├── .gitignore                     # Git ignore rules
-├── README.md                      # Project documentation
-├── TECHNICAL_SPECIFICATIONS.md    # This file
-├── main.py                        # Main application entry point
-├── src/                           # Source code directory
-│   ├── __init__.py
-│   ├── video_io.py               # Video input/output handling
-│   ├── background_subtraction.py # Background subtraction (OpenCV)
-│   ├── object_detection.py       # Object detection and filtering
-│   ├── tracking.py               # Tracking logic and state management
-│   ├── ptz_control.py            # Virtual PTZ calculations
-│   ├── rendering.py              # Frame rendering and overlays
-│   ├── config.py                 # Configuration loading and validation
-│   └── utils.py                  # Utility functions and helpers
-├── tests/                         # Unit tests (pytest)
-│   ├── __init__.py
-│   ├── test_background_subtraction.py
-│   ├── test_object_detection.py
-│   └── test_ptz_control.py
-├── logs/                          # Log files (auto-generated)
-│   ├── tracking.log
-│   └── telemetry.csv
-├── output/                        # Output videos (auto-generated)
-│   └── output.mp4
-└── input/                         # Input videos
-    └── example.mp4
+├── main.py              # 250 lines: Main application
+├── tracker.py           # 300 lines: Detection & tracking
+├── ptz.py              # 100 lines: PTZ control
+├── debug_view.py       # 100 lines: Debug mosaic
+├── config.yaml         # 50 lines: Configuration
+├── requirements.txt    # Dependencies
+├── README.md           # Quick start guide
+├── PROJECT_PLAN.md     # Implementation plan
+└── .gitignore
+
+Total: ~750 lines of implementation code
 ```
 
-### 21.4 Code Module Architecture
+---
 
-**Core Modules:**
+## 16. IMPLEMENTATION CHECKLIST
 
-1. **video_io.py**: Video input/output handling
+### Week 1: Core Functionality
+- [ ] Video I/O with OpenCV
+- [ ] Background subtraction (MOG2)
+- [ ] Contour detection and filtering
+- [ ] Norfair integration for multi-object tracking
+- [ ] CSRT/KCF single-object tracking
+- [ ] State machine (3 states)
+- [ ] Keyboard input handling
 
-   - VideoCapture wrapper
-   - VideoWriter wrapper
-   - Frame buffering
+### Week 2: PTZ and Visualization
+- [ ] PTZ controller implementation
+- [ ] ROI extraction and transformation
+- [ ] Debug mosaic creation
+- [ ] Drawing functions (boxes, IDs, status)
+- [ ] Recovery mechanism
 
-2. **background_subtraction.py**: Background subtraction algorithms
-
-   - OpenCV subtractor wrapper (MOG2, KNN, etc.)
-   - Mask post-processing pipeline
-   - Unified interface for OpenCV algorithms
-
-3. **object_detection.py**: Object detection and filtering
-
-   - Contour detection
-   - Filtering (area, aspect ratio, solidity)
-   - Bounding box calculation
-   - Centroid calculation
-
-4. **tracking.py**: Tracking logic and state management
-
-   - State machine (IDLE, ACQUIRING, TRACKING, LOST)
-   - Object association
-   - Confidence scoring
-   - Trajectory recording
-
-5. **ptz_control.py**: Virtual PTZ calculations
-
-   - Pan/tilt calculation from centroid
-   - Zoom control from object size
-   - Smoothing and deadband
-   - ROI calculation
-
-6. **rendering.py**: Frame rendering and overlays
-
-   - ROI extraction and resizing
-   - Bounding box overlay
-   - Crosshair overlay
-   - Text information overlay
-   - Trajectory visualization
-
-7. **config.py**: Configuration loading and validation
-
-   - YAML/JSON loading
-   - Parameter validation
-   - Default values
-
-8. **main.py**: Main application loop and orchestration
-   - Initialize all components
-   - Main processing loop
-   - User input handling
-   - Cleanup
-
-### 21.5 Coding Standards
-
-- Follow PEP 8 style guidelines
-- Type hints for function signatures
-- Docstrings for all classes and functions
-- Comprehensive error handling
-- Avoid global variables (use class-based state)
-
-### 21.6 Documentation
-
-- README with setup and usage instructions
-- Architecture diagram
-- Configuration parameter reference
-- API documentation for key functions
-- Example videos and expected outputs
+### Week 3: Polish and Testing
+- [ ] Configuration system
+- [ ] Edge case handling
+- [ ] Performance optimization
+- [ ] Documentation
+- [ ] Testing with various videos
 
 ---
 
-## 22. ACCEPTANCE CRITERIA
+## 17. SUCCESS CRITERIA
 
-The system is considered complete when it can:
-
-1. ✓ Load and process a video file without errors
-2. ✓ Detect moving objects using background subtraction
-3. ✓ Track a single object and maintain tracking state
-4. ✓ Simulate PTZ camera movements (pan, tilt, zoom)
-5. ✓ Keep tracked object centered in virtual camera view
-6. ✓ Display real-time output with overlays
-7. ✓ Save processed video to file
-8. ✓ Handle tracking loss and recovery gracefully
-9. ✓ Process video at acceptable frame rate (>15 fps for 720p)
-10. ✓ Provide configurable parameters via config file
-11. ✓ Respond to keyboard controls during playback
-12. ✓ Generate telemetry logs with PTZ data
-13. ✓ Work with various video formats and resolutions
-14. ✓ Run without crashes on test video suite
-15. ✓ Meet tracking accuracy criteria on validation set
+✅ Loads and processes video files
+✅ Detects multiple moving objects
+✅ Assigns persistent IDs to objects
+✅ User can select object by pressing number key
+✅ Tracks selected object with CSRT/KCF
+✅ Applies virtual PTZ to keep object centered
+✅ Debug mosaic shows pipeline stages
+✅ Handles tracking loss gracefully
+✅ Processes at target frame rate
+✅ Clean, maintainable codebase
 
 ---
 
-## 23. GLOSSARY
+## 18. FUTURE ENHANCEMENTS (Post-MVP)
 
-- **PTZ**: Pan-Tilt-Zoom camera system
-- **ROI**: Region of Interest
-- **Background Subtraction**: Technique to identify moving objects by comparing frames to background model
-- **MOG2**: Mixture of Gaussians 2, adaptive background subtraction algorithm
-- **Foreground Mask**: Binary image showing detected moving regions
-- **Morphological Operations**: Image processing operations (erosion, dilation, opening, closing)
-- **Contour**: Curve joining continuous points with same intensity
-- **Centroid**: Geometric center of a contour or bounding box
-- **Deadband**: Range of values where no action is taken to prevent oscillation
-- **IoU**: Intersection over Union, metric for object overlap
-- **Interpolation**: Method for estimating pixel values when resizing images
-- **Telemetry**: Automated recording of data for analysis
+- Deep learning detection (YOLO)
+- Physical PTZ camera support (ONVIF)
+- Real-time camera streams (RTSP)
+- Multiple object simultaneous tracking
+- Trajectory analysis and heatmaps
+- Configuration UI
+- Performance profiling and telemetry
+- Advanced recovery strategies
 
 ---
 
-## END OF SPECIFICATIONS
+**Document Version:** 2.0 (Simplified Implementation-Ready Version)
+**Previous Version:** 1.0 (Comprehensive Research Document)
+**Changes:** Simplified from 2700+ lines to 800 lines, removed over-engineering, focused on MVP implementation

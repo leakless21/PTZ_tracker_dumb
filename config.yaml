@@ -9,32 +9,21 @@ video:
   loop_playback: false
   process_every_n_frames: 1  # Process every frame (1 = all frames)
 
-# Background Subtraction
+# Background Subtraction (OpenCV only)
 background_subtraction:
-  library: "bgslibrary"  # Options: bgslibrary (recommended), opencv (legacy)
-  algorithm: "PAWCS"  # BGSLibrary: PAWCS (default), SuBSENSE, ViBe, SigmaDelta, LOBSTER, FrameDifference, etc.
-                      # OpenCV (legacy): MOG2, KNN, MOG, GMG, CNT
+  algorithm: "MOG2"  # Options: MOG2 (recommended), KNN
+  history: 500
+  var_threshold: 16.0  # For MOG2
+  dist2_threshold: 400.0  # For KNN
+  detect_shadows: true
+  learning_rate: -1  # -1 for automatic, or 0.001-0.1
 
-  # Note: BGSLibrary algorithms are pre-configured with optimal parameters
-  # No need to specify history, variance thresholds, or learning rates
-
-  # OpenCV-specific parameters (only used if library="opencv")
-  opencv:
-    history: 500
-    var_threshold: 16.0  # For MOG2
-    dist2_threshold: 400.0  # For KNN
-    detect_shadows: true
-    learning_rate: -1  # -1 for automatic, or 0.001-0.1
-
-# Foreground Mask Post-Processing
-# Pipeline: Erosion -> Dilation -> Gaussian Blur -> Closing -> Threshold
+# Foreground Mask Post-Processing (Simplified)
+# Pipeline: Opening -> Closing -> Threshold
 mask_processing:
   enable: true
-  kernel_size: 5  # Morphological kernel size: 3, 5, 7, 9 (default: 5)
-  erosion_iterations: 1
-  dilation_iterations: 1
-  gaussian_blur_kernel: 3  # Must be odd: 3, 5, 7 (default: 3)
-  threshold_value: 130  # Binary threshold: 100-150 (default: 130)
+  kernel_size: 5  # Morphological kernel size: 3, 5, 7 (default: 5)
+  threshold_value: 127  # Binary threshold: 100-150 (default: 127)
 
 # Object Detection
 object_detection:
@@ -46,40 +35,25 @@ object_detection:
   min_extent: 0.2
   selection_strategy: "largest"  # Options: largest, center, previous
 
-# Tracking - Dual Mode System
+# Tracking (Simplified)
 tracking:
-  # Tracking Mode: "detection" (Norfair multi-object) or "locked" (CSRT single-object)
-  initial_mode: "detection"  # Start in detection mode
+  tracker: "KCF"  # KCF (fast, recommended) or CSRT (accurate)
 
   # Norfair Multi-Object Tracking (Detection Mode)
   norfair:
     distance_threshold: 50  # Maximum pixels for object association
     hit_counter_max: 10  # Frames to keep track without detection
     initialization_delay: 3  # Frames before confirming new track
-    pointwise_hit_counter_max: 4
 
-  # CSRT Single-Object Tracking (Locked Mode)
-  csrt:
-    enable: true  # Enable CSRT tracker
-    lost_frames_threshold: 15  # Frames before declaring CSRT lost
-    recovery_timeout: 3.0  # Seconds to attempt recovery
-    min_bbox_area: 100  # Minimum bbox area (pixels)
-    max_bbox_area_fraction: 0.8  # Maximum bbox area (fraction of frame)
-
-  # Object Selection (Manual Only)
+  # Object Selection
   selection:
-    method: "manual"  # Only manual selection supported (press number key 0-9)
     min_track_age: 5  # Minimum frames tracked before selectable
 
   # Recovery Settings
   recovery:
-    enable_recovery: true  # Attempt to reacquire lost objects
     search_radius: 150  # Pixels to search for lost object
-    size_similarity_threshold: 0.5  # 0.0-1.0 for object matching during recovery
-
-  # PTZ Deadband
-  deadband_x: 0.05  # Horizontal deadband (fraction of frame width)
-  deadband_y: 0.05  # Vertical deadband (fraction of frame height)
+    size_similarity_threshold: 0.5  # 0.0-1.0 for object matching
+    timeout: 3.0  # Seconds before giving up
 
 # PTZ Control
 ptz_control:
@@ -96,35 +70,9 @@ ptz_control:
 # Display
 display:
   show_window: true
-  window_name: "PTZ Tracking"
-  window_mode: "normal"  # Options: normal, fullscreen
-  show_bounding_box: true
-  show_info_overlay: true
-  show_trajectory: false
-  show_debug_mosaic: true  # Show 2x4 grid of pipeline stages for debugging
-  save_debug_mosaic: false  # Save mosaic to video file
-  output_width: null  # null = same as input
-  output_height: null  # null = same as input
+  show_info: true
+  show_debug_mosaic: true  # 2×4 grid of pipeline stages
 
-# Rendering
-rendering:
-  interpolation: "linear"  # Options: nearest, linear, cubic, lanczos4, area
-  font_scale: 0.6
-  font_thickness: 2
-  line_thickness: 2
-
-# Logging (using loguru)
-logging:
-  level: "INFO"  # Options: TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, CRITICAL
-  log_to_file: true
-  log_file: "logs/tracking.log"
-
-  # Loguru-specific settings
-  rotation: "10 MB"  # Rotate when file reaches size (e.g., "10 MB", "100 KB") or time (e.g., "1 day", "00:00")
-  retention: "7 days"  # Keep logs for specified duration (e.g., "7 days", "2 weeks", "1 month")
-  compression: "zip"  # Compress rotated logs (options: "zip", "gz", "bz2", "xz")
-  colorize: true  # Enable colored console output
-
-  # Telemetry
-  save_telemetry: true
-  telemetry_file: "logs/telemetry.csv"
+  debug_mosaic:
+    tile_width: 320
+    tile_height: 240

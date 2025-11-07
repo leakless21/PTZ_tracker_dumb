@@ -29,11 +29,13 @@ This document outlines the complete implementation plan for a real-time PTZ came
 - Implement configuration override via command-line arguments
 
 #### Logging & Telemetry Infrastructure
-- Set up structured logging system with multiple log levels
-- Implement file-based logging with rotation
+- Set up loguru-based logging system with multiple log levels (TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, CRITICAL)
+- Configure loguru for automatic file rotation by size and time
+- Enable log compression for rotated files
 - Create telemetry data collection framework
 - Design CSV export format for tracking metrics
 - Add performance profiling decorators for critical functions
+- Configure colored console output for better readability
 
 #### Project Structure Setup
 - Create all required directories and subdirectories
@@ -919,14 +921,14 @@ PTZ_tracker_dumb/
 **Purpose**: Shared utility functions for common operations
 
 **Responsibilities**:
-- Logging setup and management
+- Loguru-based logging setup and management
 - Telemetry data collection and export
 - Coordinate system transformations
 - Geometric calculations
 - Performance profiling
 
 **Key Functions**:
-- setup_logging: Configure logging system
+- setup_logging: Configure loguru with console and file handlers, rotation, and compression
 - log_telemetry: Record tracking metrics
 - export_telemetry_csv: Save telemetry to file
 - transform_coordinates: Convert between coordinate systems
@@ -934,18 +936,49 @@ PTZ_tracker_dumb/
 - calculate_iou: Intersection over union
 - profile_function: Performance measurement decorator
 
+**Logging Configuration Example**:
+```python
+from loguru import logger
+
+def setup_logging(config):
+    """Configure loguru based on application configuration"""
+    # Remove default handler
+    logger.remove()
+
+    # Add console handler
+    logger.add(
+        sys.stderr,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>",
+        level=config.get("level", "INFO"),
+        colorize=True
+    )
+
+    # Add file handler with rotation
+    if config.get("log_to_file", True):
+        logger.add(
+            config.get("log_file", "logs/tracking.log"),
+            rotation="10 MB",
+            retention="7 days",
+            compression="zip",
+            level="DEBUG",
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}"
+        )
+
+    return logger
+```
+
 **Inputs**:
 - Various data types depending on function
 - Configuration parameters
 
 **Outputs**:
-- Log entries
+- Log entries with automatic rotation and compression
 - CSV telemetry files
 - Transformed coordinates
 - Calculated metrics
 
 **Dependencies**:
-- Python logging
+- loguru (for logging)
 - CSV module
 - NumPy
 - Time and datetime modules
@@ -1068,16 +1101,28 @@ Module Events → Telemetry Collector → In-Memory Buffer → Periodic CSV Writ
 
 ### Logging and Debugging
 
-**Log levels**:
-- DEBUG: Frame-by-frame state changes
+**Log levels** (loguru):
+- TRACE: Detailed diagnostic information
+- DEBUG: Frame-by-frame state changes and detailed processing info
 - INFO: Significant events (state transitions, object selection)
-- WARNING: Recoverable errors (CSRT loss)
-- ERROR: Critical failures
+- SUCCESS: Successful operations (tracker initialization, recovery)
+- WARNING: Recoverable errors (CSRT loss, tracking degradation)
+- ERROR: Critical failures with full stack traces
+- CRITICAL: Application-level failures
+
+**Loguru features**:
+- Automatic colored console output for better readability
+- File rotation by size (e.g., 10 MB) or time (e.g., daily)
+- Automatic compression of rotated logs (zip format)
+- Retention policy (e.g., keep logs for 7 days)
+- Contextual logging with `.bind()` for adding context
+- Better exception logging with full tracebacks
 
 **Debug tools**:
 - Mosaic view for pipeline visualization
 - Telemetry export for post-analysis
 - Performance profiling decorators
+- Rich log format with module, function, and line numbers
 
 ### Maintenance Considerations
 

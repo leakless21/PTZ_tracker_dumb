@@ -113,10 +113,18 @@ rendering:
   font_thickness: 2
   line_thickness: 2
 
-# Logging
+# Logging (using loguru)
 logging:
-  level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"  # Options: TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, CRITICAL
   log_to_file: true
   log_file: "logs/tracking.log"
+
+  # Loguru-specific settings
+  rotation: "10 MB"  # Rotate when file reaches size (e.g., "10 MB", "100 KB") or time (e.g., "1 day", "00:00")
+  retention: "7 days"  # Keep logs for specified duration (e.g., "7 days", "2 weeks", "1 month")
+  compression: "zip"  # Compress rotated logs (options: "zip", "gz", "bz2", "xz")
+  colorize: true  # Enable colored console output
+
+  # Telemetry
   save_telemetry: true
   telemetry_file: "logs/telemetry.csv"

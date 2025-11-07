@@ -1877,10 +1877,68 @@ video:
 
 ### 13.4 Logging
 
-- **Log Levels**: DEBUG, INFO, WARNING, ERROR
-- **Log Format**: Timestamp, level, module, message
-- **Log Output**: Console and file
-- **Rotation**: Time-based or size-based log rotation
+The system uses **loguru** for logging, which provides a simplified and more powerful logging experience compared to the standard Python logging module.
+
+**Key Features**:
+- **Automatic formatting**: Beautiful, colored output with timestamps
+- **Easy configuration**: Simple API without handlers, formatters, or filters
+- **File rotation**: Built-in support for size and time-based rotation
+- **Contextual logging**: Easy to add context information to logs
+- **Exception handling**: Better exception logging with full traceback
+
+**Log Levels**: TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, CRITICAL
+
+**Basic Usage**:
+```python
+from loguru import logger
+
+logger.debug("Debug message")
+logger.info("Info message")
+logger.success("Success message")
+logger.warning("Warning message")
+logger.error("Error message")
+```
+
+**Configuration**:
+```python
+from loguru import logger
+
+# Remove default handler
+logger.remove()
+
+# Add console handler with custom format
+logger.add(
+    sys.stderr,
+    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    level="INFO"
+)
+
+# Add file handler with rotation
+logger.add(
+    "logs/tracking.log",
+    rotation="10 MB",  # Rotate when file reaches 10 MB
+    retention="7 days",  # Keep logs for 7 days
+    compression="zip",  # Compress rotated logs
+    level="DEBUG"
+)
+```
+
+**Rotation Options**:
+- **Size-based**: `rotation="10 MB"` - Rotate when file reaches size
+- **Time-based**: `rotation="1 day"` - Rotate daily at midnight
+- **Time-specific**: `rotation="00:00"` - Rotate at specific time
+- **Combined**: Can use both size and time conditions
+
+**Contextual Logging**:
+```python
+# Add context to all subsequent logs
+with logger.contextualize(frame_id=123):
+    logger.info("Processing frame")  # Will include frame_id in log
+
+# Bind context permanently
+logger = logger.bind(module="tracking")
+logger.info("Tracking update")  # Will include module in all logs
+```
 
 ---
 
@@ -2127,13 +2185,29 @@ CSV or JSON file containing per-frame data:
 
 ### 17.3 Event Log
 
-Text log file containing:
+Text log file managed by loguru containing:
 
 - Application start/stop events
 - Configuration changes
 - State transitions (IDLE→TRACKING, etc.)
-- Errors and warnings
+- Errors and warnings with full stack traces
 - Performance metrics summary
+- Automatic file rotation based on size or time
+- Compressed archives of rotated logs
+
+**Log Format** (customizable):
+```
+2025-11-07 10:23:45 | INFO     | src.tracking:update:123 - Transitioning to LOCKED_MODE
+2025-11-07 10:23:46 | SUCCESS  | src.csrt:init:45 - CSRT tracker initialized successfully
+2025-11-07 10:23:50 | WARNING  | src.csrt:update:67 - Tracking quality degraded
+2025-11-07 10:23:51 | ERROR    | src.csrt:update:72 - CSRT tracking lost
+```
+
+Loguru automatically includes:
+- Timestamp with millisecond precision
+- Log level with color coding (in console)
+- Source module, function, and line number
+- Full exception tracebacks when logging errors
 
 ### 17.4 Statistics Summary
 
@@ -2291,13 +2365,22 @@ pixi --version
 - **numpy**: Numerical computing
   - Version: 1.19+
   - Used for: Array operations, numerical computations
+- **loguru**: Modern logging library (from PyPI)
+  - Version: 0.7+
+  - Used for: Application logging with automatic rotation and formatting
+  - Install: `pip install loguru` or `pixi add --pypi loguru`
+- **norfair**: Multi-object tracking library (from PyPI)
+  - Version: 2.0+
+  - Used for: Multi-object tracking in DETECTION_MODE
+  - Install: `pip install norfair` or `pixi add --pypi norfair`
+- **pyyaml**: YAML configuration support
+  - Version: 5.0+
+  - Used for: Configuration file parsing
 - **python**: Python interpreter
   - Version: 3.8-3.11 recommended
 
 **Optional Libraries:**
 
-- **pyyaml**: YAML configuration support
-  - Alternative: Use JSON (built-in)
 - **matplotlib**: Visualization and plotting
   - For: Offline analysis, trajectory visualization
 - **pandas**: Data analysis and telemetry processing
@@ -2326,6 +2409,10 @@ python = ">=3.8,<3.12"
 opencv = ">=4.5"
 numpy = ">=1.19"
 pyyaml = ">=5.0"
+
+[pypi-dependencies]
+loguru = ">=0.7.0"
+norfair = ">=2.0.0"
 
 [feature.viz.dependencies]
 matplotlib = ">=3.5"

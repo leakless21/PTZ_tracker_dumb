@@ -1,1188 +1,411 @@
 # PTZ Camera Object Tracking System - Project Plan
 
+**Version:** 2.0 (Simplified)
+**Date:** November 7, 2025
+**Estimated Duration:** 2-3 weeks
+**Target:** Clean, minimal MVP implementation
+
+---
+
 ## Executive Summary
 
-This document outlines the complete implementation plan for a real-time PTZ camera object tracking system using background subtraction, dual-mode tracking (Norfair + CSRT), and virtual camera control. The system processes pre-recorded video and simulates pan-tilt-zoom operations to keep tracked objects centered.
+This plan outlines a **simplified, focused approach** to implementing a PTZ object tracking system. The goal is to deliver a **working MVP in 2-3 weeks** with clean, maintainable code (~750 lines across 5 files).
+
+**Key Changes from Previous Plan:**
+- Reduced from 13 phases to **4 phases**
+- Reduced from 7-10 weeks to **2-3 weeks**
+- Reduced from 34+ files to **5 files**
+- Reduced complexity while keeping desired workflow
+
+**Core Principle:** Build the MVP first, then iterate based on real needs.
 
 ---
 
-## Table of Contents
+## Development Approach
 
-1. [Development Phases & Todo Lists](#development-phases--todo-lists)
-2. [Project File Structure](#project-file-structure)
-3. [Module Contracts & Responsibilities](#module-contracts--responsibilities)
-4. [Data Flow & Integration Points](#data-flow--integration-points)
-5. [Testing Strategy](#testing-strategy)
-6. [Deployment & Maintenance](#deployment--maintenance)
+### YAGNI Principle
 
----
+**"You Aren't Gonna Need It"** - Only implement what's needed now.
 
-## Development Phases & Todo Lists
+**Included in MVP:**
+- ✅ Multi-object detection with IDs (Norfair)
+- ✅ Manual ID selection (0-9 keys)
+- ✅ Single-object tracking (CSRT/KCF)
+- ✅ Virtual PTZ control
+- ✅ Debug mosaic (2×4 grid)
+- ✅ Basic configuration
+- ✅ Video I/O
 
-### Phase 1: Foundation & Core Infrastructure
-
-#### Configuration Management
-- Create configuration loader module that parses YAML configuration files
-- Implement configuration validation with schema checking
-- Add configuration hot-reload capability for development
-- Create default configuration fallback mechanism
-- Implement configuration override via command-line arguments
-
-#### Logging & Telemetry Infrastructure
-- Set up loguru-based logging system with multiple log levels (TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, CRITICAL)
-- Configure loguru for automatic file rotation by size and time
-- Enable log compression for rotated files
-- Create telemetry data collection framework
-- Design CSV export format for tracking metrics
-- Add performance profiling decorators for critical functions
-- Configure colored console output for better readability
-
-#### Project Structure Setup
-- Create all required directories and subdirectories
-- Set up package initialization files
-- Configure import paths and module discovery
-- Add development environment setup scripts
-- Create requirements files for different installation methods
-
-### Phase 2: Video Input & Preprocessing
-
-#### Video Capture Module
-- Implement video file reader with OpenCV VideoCapture
-- Add video metadata extraction for resolution, FPS, codec information
-- Create frame buffer management system
-- Implement frame skip functionality for performance optimization
-- Add loop playback support for continuous testing
-
-#### Frame Preprocessing
-- Implement frame resizing with configurable interpolation methods
-- Add color space conversion utilities
-- Create frame normalization functions
-- Implement timestamp extraction and synchronization
-- Add frame validation and error handling
-
-### Phase 3: Background Subtraction Engine
-
-#### OpenCV Background Subtraction Implementation
-- Implement OpenCV MOG2 background subtractor
-- Add KNN-based background subtraction option
-- Create parameter configuration for OpenCV algorithms
-- Implement learning rate control
-- Add shadow detection toggle
-
-#### Mask Post-Processing Pipeline
-- Implement morphological erosion operation
-- Add morphological dilation operation
-- Create Gaussian blur filter for noise reduction
-- Implement morphological closing operation
-- Add binary thresholding with configurable values
-- Create pipeline chaining mechanism for sequential operations
-
-### Phase 4: Object Detection & Analysis
-
-#### Contour Detection
-- Implement contour finding with hierarchy analysis
-- Add contour approximation for shape simplification
-- Create contour filtering by area thresholds
-- Implement bounding box extraction from contours
-- Add contour moment calculation for centroids
-
-#### Object Property Analysis
-- Calculate object area in pixels
-- Compute aspect ratio for shape filtering
-- Calculate solidity for object density analysis
-- Compute extent for bounding box fill ratio
-- Implement convex hull calculation
-- Add perimeter calculation
-
-#### Object Filtering & Selection
-- Implement multi-criteria filtering system based on size, shape, density
-- Create largest object selector
-- Add center-weighted object selector
-- Implement previous position proximity selector
-- Create object ranking system for selection priority
-
-### Phase 5: State Management System
-
-#### System State Controller
-- Implement finite state machine with four states
-- Create state transition validation logic
-- Add state change event callbacks
-- Implement state persistence for recovery
-- Create state history tracking for debugging
-
-#### State-Specific Logic
-- Implement DETECTION_MODE processing pipeline
-- Create LOCKED_MODE tracking loop
-- Add LOST state recovery mechanism
-- Implement IDLE state handling
-- Create state-specific rendering logic
-
-#### User Input Handler
-- Implement keyboard event listener
-- Create state-specific key mapping
-- Add numeric key handler for object ID selection
-- Implement release and reset key handlers
-- Add debug toggle key handler
-- Create pause and quit key handlers
-
-### Phase 6: Multi-Object Tracking with Norfair
-
-#### Norfair Integration
-- Install and configure Norfair library
-- Create detection-to-Norfair format converter
-- Implement Norfair tracker initialization
-- Configure distance function for object association
-- Set up hit counter and initialization delay parameters
-
-#### Track Management
-- Implement track creation from detections
-- Add track update mechanism with new detections
-- Create track termination logic for lost objects
-- Implement track ID assignment and management
-- Add track history for trajectory visualization
-
-#### Detection Integration
-- Convert contour detections to Norfair detection format
-- Implement centroid-based tracking
-- Add bounding box information to tracked objects
-- Create track confidence scoring
-- Implement track age filtering for selection eligibility
-
-### Phase 7: Single-Object Tracking with CSRT
-
-#### CSRT Tracker Initialization
-- Implement OpenCV CSRT tracker creation
-- Add bounding box initialization from selected object
-- Create tracker validation after initialization
-- Implement failure handling during initialization
-- Add tracker reset mechanism
-
-#### CSRT Update & Monitoring
-- Implement frame-by-frame tracker update
-- Add bounding box validation for reasonable dimensions
-- Create loss detection based on tracking quality
-- Implement lost frame counter
-- Add automatic transition to LOST state on failure
-
-#### Recovery Mechanism
-- Implement search area definition around last known position
-- Create candidate object detection in search area
-- Add size and position similarity scoring
-- Implement best match selection algorithm
-- Create CSRT re-initialization with recovered object
-- Add recovery timeout with transition to DETECTION_MODE
-
-### Phase 8: Virtual PTZ Control System
-
-#### PTZ State Manager
-- Implement pan angle state with bounds checking
-- Add tilt angle state with bounds checking
-- Create zoom factor state with min/max limits
-- Implement PTZ state smoothing with exponential filtering
-- Add velocity limiting for realistic camera movement
-
-#### PTZ Control Logic
-- Calculate object offset from frame center in normalized coordinates
-- Implement deadband zone to prevent jitter
-- Create proportional control law for pan adjustment
-- Add proportional control law for tilt adjustment
-- Implement zoom control based on object size
-- Add maximum speed clamping for smooth movement
-
-#### ROI Calculation
-- Convert pan/tilt/zoom to Region of Interest in pixel coordinates
-- Implement bounds checking to prevent ROI outside frame
-- Add aspect ratio preservation
-- Create ROI centering logic
-- Implement ROI coordinate transformation utilities
-
-#### Virtual Camera Rendering
-- Extract ROI from original frame
-- Implement ROI resizing to output dimensions
-- Add interpolation method selection
-- Create viewport transformation matrix
-- Implement coordinate mapping from ROI to output frame
-
-### Phase 9: Visualization & Rendering
-
-#### Bounding Box Rendering
-- Draw multi-object bounding boxes in cyan for DETECTION_MODE
-- Render locked object bounding box in green for LOCKED_MODE
-- Add search area circle in red for LOST state
-- Implement variable line thickness
-- Add anti-aliased drawing option
-
-#### Overlay Information
-- Display current system state text
-- Show tracking mode indicator
-- Add object ID labels above bounding boxes
-- Display PTZ parameters on screen
-- Show frame counter and timestamp
-- Add FPS counter display
-- Create track age display for locked objects
-
-#### Debug Mosaic View
-- Design 2x4 grid layout for eight pipeline stages
-- Implement original frame tile
-- Add foreground mask tile
-- Create processed mask tile
-- Add contours visualization tile
-- Implement detection results tile
-- Add tracking visualization tile
-- Create PTZ ROI visualization tile
-- Implement final output tile
-- Add resize logic for uniform tile dimensions
-- Create mosaic composition and border drawing
-
-#### Trajectory Visualization
-- Store object position history
-- Implement trajectory line drawing
-- Add trajectory decay for visual clarity
-- Create color-coded trajectory by track ID
-- Implement trajectory pruning for performance
-
-### Phase 10: Output & Recording
-
-#### Video Writer Setup
-- Initialize OpenCV VideoWriter with codec selection
-- Configure output resolution and frame rate
-- Implement codec fallback mechanism
-- Add file path validation and directory creation
-- Create writer error handling
-
-#### Frame Recording
-- Write processed frames to output video
-- Add optional mosaic recording
-- Implement conditional recording based on configuration
-- Create frame queue for asynchronous writing
-- Add recording statistics tracking
-
-#### Display Manager
-- Create OpenCV window with proper naming
-- Implement window resize and positioning
-- Add fullscreen mode toggle
-- Create window close event handler
-- Implement frame display with refresh rate control
-
-### Phase 11: Main Application Loop
-
-#### Application Initialization
-- Load and validate configuration
-- Initialize logging and telemetry systems
-- Create video capture instance
-- Initialize background subtractor
-- Create Norfair tracker instance
-- Initialize system state machine
-- Set up PTZ state
-- Create video writer if output enabled
-- Initialize display window if visualization enabled
-
-#### Main Processing Loop
-- Read frame from video source
-- Increment frame counter and update timestamp
-- Branch processing based on current system state
-- Execute state-specific pipeline
-- Update PTZ control based on tracked object
-- Calculate and extract ROI
-- Render visualization overlays
-- Compose debug mosaic if enabled
-- Write frame to output video if enabled
-- Display frame to window if enabled
-- Handle keyboard input and state transitions
-- Log telemetry data
-- Check for loop termination conditions
-
-#### Cleanup & Finalization
-- Release video capture resources
-- Release video writer and flush buffers
-- Destroy OpenCV windows
-- Save final telemetry data to CSV
-- Close log files
-- Print summary statistics
-- Exit gracefully
-
-### Phase 12: Testing & Validation
-
-#### Unit Tests
-- Write tests for configuration loader
-- Create tests for preprocessing functions
-- Add tests for object detection filters
-- Implement tests for PTZ control calculations
-- Create tests for state transitions
-- Add tests for coordinate transformations
-
-#### Integration Tests
-- Test video input to preprocessing pipeline
-- Validate background subtraction to detection flow
-- Test detection to tracking integration
-- Validate tracking to PTZ control flow
-- Test state machine transitions with real scenarios
-- Validate end-to-end pipeline with sample videos
-
-#### Performance Tests
-- Benchmark frame processing speed
-- Test memory usage under extended runtime
-- Validate real-time capability at different resolutions
-- Test algorithm performance comparisons
-- Benchmark PTZ calculation overhead
-
-#### Edge Case Testing
-- Test with no objects detected
-- Validate behavior with multiple simultaneous objects
-- Test object entering and leaving frame
-- Validate occlusion handling
-- Test rapid camera motion scenarios
-- Validate extreme lighting conditions
-
-### Phase 13: Documentation & Polish
-
-#### Code Documentation
-- Add docstrings to all public functions
-- Create type hints for function signatures
-- Write module-level documentation
-- Add inline comments for complex logic
-- Create API reference documentation
-
-#### User Documentation
-- Update README with complete usage instructions
-- Document all configuration parameters
-- Create troubleshooting guide
-- Add example configurations for common scenarios
-- Write algorithm selection guide
-
-#### Developer Documentation
-- Document system architecture
-- Create data flow diagrams
-- Write module interaction guide
-- Document state machine behavior
-- Add extension and customization guide
+**Deferred to Post-MVP:**
+- ❌ Extensive logging infrastructure (use basic logging)
+- ❌ Telemetry CSV export
+- ❌ Performance profiling decorators
+- ❌ Complex recovery strategies (keep it simple)
+- ❌ Multiple background subtraction libraries
 
 ---
 
-## Project File Structure
+## Project Structure
 
+```
 PTZ_tracker_dumb/
-│
-├── config.yaml                      # Main configuration file
-├── README.md                        # User-facing documentation
-├── TECHNICAL_SPECIFICATIONS.md      # Complete technical specifications
-├── PROJECT_PLAN.md                  # This file - project planning document
-├── pixi.toml                        # Pixi project configuration and dependencies
-├── .gitignore                       # Git ignore patterns
-│
-├── main.py                          # Application entry point
-│
-├── src/                             # Source code root
-│   │
-│   ├── __init__.py                  # Package initialization
-│   │
-│   ├── config/                      # Configuration management
-│   │   ├── __init__.py
-│   │   ├── loader.py                # YAML configuration loader
-│   │   ├── validator.py             # Configuration schema validation
-│   │   └── defaults.py              # Default configuration values
-│   │
-│   ├── core/                        # Core application logic
-│   │   ├── __init__.py
-│   │   ├── application.py           # Main application class
-│   │   ├── state_machine.py         # System state management
-│   │   └── pipeline.py              # Processing pipeline orchestration
-│   │
-│   ├── video/                       # Video input/output
-│   │   ├── __init__.py
-│   │   ├── capture.py               # Video file reading and frame extraction
-│   │   ├── writer.py                # Video file writing
-│   │   └── preprocessing.py         # Frame preprocessing utilities
-│   │
-│   ├── background_subtraction/      # Background subtraction module
-│   │   ├── __init__.py
-│   │   ├── base.py                  # Abstract base class for subtractors
-│   │   ├── opencv_subtractor.py     # OpenCV algorithms implementation
-│   │   ├── factory.py               # Algorithm factory pattern
-│   │   └── postprocessing.py        # Mask morphological operations
-│   │
-│   ├── detection/                   # Object detection module
-│   │   ├── __init__.py
-│   │   ├── contour_detector.py      # Contour-based object detection
-│   │   ├── object_analyzer.py       # Object property calculation
-│   │   ├── filters.py               # Object filtering by criteria
-│   │   └── selector.py              # Object selection strategies
-│   │
-│   ├── tracking/                    # Object tracking module
-│   │   ├── __init__.py
-│   │   ├── base.py                  # Abstract tracker interface
-│   │   ├── norfair_tracker.py       # Norfair multi-object tracking
-│   │   ├── csrt_tracker.py          # CSRT single-object tracking
-│   │   ├── track_manager.py         # Track lifecycle management
-│   │   └── recovery.py              # Lost object recovery logic
-│   │
-│   ├── ptz/                         # PTZ control module
-│   │   ├── __init__.py
-│   │   ├── controller.py            # PTZ control logic
-│   │   ├── state.py                 # PTZ state management (pan/tilt/zoom)
-│   │   ├── roi_calculator.py        # ROI calculation from PTZ parameters
-│   │   └── virtual_camera.py        # Virtual camera rendering
-│   │
-│   ├── rendering/                   # Visualization and rendering
-│   │   ├── __init__.py
-│   │   ├── bbox_drawer.py           # Bounding box drawing utilities
-│   │   ├── overlay.py               # Information overlay rendering
-│   │   ├── mosaic.py                # Debug mosaic composition
-│   │   ├── trajectory.py            # Object trajectory visualization
-│   │   └── colors.py                # Color definitions and utilities
-│   │
-│   ├── input/                       # User input handling
-│   │   ├── __init__.py
-│   │   ├── keyboard.py              # Keyboard event handling
-│   │   └── commands.py              # Command interpretation and dispatch
-│   │
-│   └── utils/                       # Utility functions
-│       ├── __init__.py
-│       ├── logging.py               # Logging configuration and utilities
-│       ├── telemetry.py             # Telemetry data collection and export
-│       ├── coordinates.py           # Coordinate system transformations
-│       ├── geometry.py              # Geometric calculations
-│       └── performance.py           # Performance profiling utilities
-│
-├── tests/                           # Test suite
-│   ├── __init__.py
-│   ├── conftest.py                  # Pytest configuration and fixtures
-│   │
-│   ├── unit/                        # Unit tests
-│   │   ├── __init__.py
-│   │   ├── test_config.py           # Configuration loading tests
-│   │   ├── test_detection.py        # Detection logic tests
-│   │   ├── test_ptz.py              # PTZ calculation tests
-│   │   ├── test_coordinates.py      # Coordinate transformation tests
-│   │   └── test_state_machine.py    # State transition tests
-│   │
-│   ├── integration/                 # Integration tests
-│   │   ├── __init__.py
-│   │   ├── test_pipeline.py         # End-to-end pipeline tests
-│   │   ├── test_tracking.py         # Tracking integration tests
-│   │   └── test_video_io.py         # Video input/output tests
-│   │
-│   └── fixtures/                    # Test fixtures and data
-│       ├── sample_videos/           # Sample video files for testing
-│       ├── sample_configs/          # Sample configuration files
-│       └── expected_outputs/        # Expected test outputs
-│
-├── logs/                            # Runtime logs (generated)
-│   ├── tracking.log                 # Application log file
-│   └── telemetry.csv                # Telemetry data export
-│
-├── docs/                            # Additional documentation
-│   ├── architecture.md              # System architecture documentation
-│   ├── algorithms.md                # Algorithm selection guide
-│   ├── api_reference.md             # API documentation
-│   └── troubleshooting.md           # Common issues and solutions
-│
-└── examples/                        # Example scripts and configurations
-    ├── configs/                     # Example configurations
-    │   ├── outdoor_tracking.yaml    # Configuration for outdoor scenarios
-    │   ├── indoor_tracking.yaml     # Configuration for indoor scenarios
-    │   └── high_performance.yaml    # Performance-optimized configuration
-    └── scripts/                     # Utility scripts
-        ├── benchmark.py             # Performance benchmarking script
-        ├── compare_algorithms.py    # BGS algorithm comparison tool
-        └── analyze_telemetry.py     # Telemetry data analysis script
-
----
-
-## Module Contracts & Responsibilities
-
-### Configuration Module (src/config/)
-
-**Purpose**: Centralized configuration management with validation
-
-**Responsibilities**:
-- Load YAML configuration files
-- Validate configuration against schema
-- Provide default values for missing parameters
-- Support command-line overrides
-- Expose configuration as structured objects
-
-**Key Functions**:
-- load_config: Parse YAML file and return configuration object
-- validate_config: Check configuration for required fields and valid ranges
-- merge_configs: Combine multiple configuration sources with priority
-- get_default_config: Return default configuration
-
-**Inputs**:
-- YAML configuration file path
-- Optional command-line argument dictionary
-
-**Outputs**:
-- Validated configuration object with all parameters
-- Configuration error exceptions if validation fails
-
-**Dependencies**:
-- PyYAML library
-- Python dataclasses or pydantic for structure
-
----
-
-### Video Capture Module (src/video/capture.py)
-
-**Purpose**: Handle video file input and frame extraction
-
-**Responsibilities**:
-- Open video files using OpenCV VideoCapture
-- Extract frame metadata (resolution, FPS, codec)
-- Provide frame-by-frame iteration
-- Support frame skipping for performance
-- Handle loop playback
-- Manage video resources and cleanup
-
-**Key Functions**:
-- open_video: Initialize video capture from file path
-- read_frame: Read next frame and return as numpy array
-- get_metadata: Return video properties
-- reset: Restart video from beginning
-- close: Release video resources
-
-**Inputs**:
-- Video file path
-- Configuration parameters for frame skipping and looping
-
-**Outputs**:
-- RGB/BGR frames as numpy arrays
-- Frame metadata (timestamp, frame number)
-- End-of-stream flag
-
-**Dependencies**:
-- OpenCV (cv2.VideoCapture)
-- NumPy
-
----
-
-### Video Writer Module (src/video/writer.py)
-
-**Purpose**: Handle video file output and recording
-
-**Responsibilities**:
-- Initialize OpenCV VideoWriter with codec
-- Write frames to output video file
-- Handle codec fallback if primary fails
-- Manage output file creation and directory structure
-- Release resources on completion
-
-**Key Functions**:
-- initialize_writer: Create VideoWriter with specified parameters
-- write_frame: Write single frame to video
-- finalize: Close and flush video file
-- is_opened: Check writer status
-
-**Inputs**:
-- Output file path
-- Frame dimensions and FPS
-- Codec specification
-- Frames as numpy arrays
-
-**Outputs**:
-- Video file on disk
-- Write success status
-
-**Dependencies**:
-- OpenCV (cv2.VideoWriter)
-- NumPy
-
----
-
-### Preprocessing Module (src/video/preprocessing.py)
-
-**Purpose**: Frame preprocessing operations
-
-**Responsibilities**:
-- Resize frames with configurable interpolation
-- Convert color spaces
-- Normalize frame values
-- Apply brightness/contrast adjustments if needed
-
-**Key Functions**:
-- resize_frame: Resize frame to target dimensions
-- convert_color: Convert between color spaces
-- normalize_frame: Scale pixel values to standard range
-
-**Inputs**:
-- Input frame as numpy array
-- Target dimensions or color space
-
-**Outputs**:
-- Processed frame as numpy array
-
-**Dependencies**:
-- OpenCV
-- NumPy
-
----
-
-### Background Subtraction Module (src/background_subtraction/)
-
-**Purpose**: Separate foreground objects from background using various algorithms
-
-**Responsibilities**:
-- Provide unified interface for multiple BGS algorithms
-- Support OpenCV implementations
-- Manage background model updates
-- Apply mask post-processing pipeline
-
-**Key Classes**:
-- BackgroundSubtractor (abstract base class)
-- OpenCVSubtractor (OpenCV implementation)
-- SubtractorFactory (algorithm selection)
-- MaskPostprocessor (morphological operations)
-
-**Key Functions**:
-- apply: Process frame and return foreground mask
-- postprocess_mask: Apply erosion, dilation, blur, threshold
-- reset: Reinitialize background model
-
-**Inputs**:
-- Current frame as numpy array
-- Configuration parameters for algorithm and post-processing
-
-**Outputs**:
-- Binary foreground mask (uint8 with 0/255 values)
-
-**Dependencies**:
-- OpenCV
-- NumPy
-
----
-
-### Detection Module (src/detection/)
-
-**Purpose**: Detect and analyze objects from foreground mask
-
-**Responsibilities**:
-- Find contours in foreground mask
-- Calculate object properties (area, aspect ratio, solidity, extent)
-- Filter objects based on size and shape criteria
-- Select best object for tracking based on strategy
-- Convert detections to standardized format
-
-**Key Classes**:
-- ContourDetector: Extract contours from mask
-- ObjectAnalyzer: Calculate object properties
-- ObjectFilter: Apply filtering criteria
-- ObjectSelector: Select object based on strategy
-
-**Key Functions**:
-- detect_objects: Find all objects in mask
-- analyze_object: Compute properties for single object
-- filter_objects: Remove objects not meeting criteria
-- select_object: Choose best object for tracking
-- compute_centroid: Calculate object center point
-
-**Inputs**:
-- Binary foreground mask
-- Configuration for filtering criteria
-- Previous frame state for selection
-
-**Outputs**:
-- List of detected objects with bounding boxes and properties
-- Selected object for tracking
-
-**Dependencies**:
-- OpenCV (findContours, moments)
-- NumPy
-
----
-
-### Tracking Module (src/tracking/)
-
-**Purpose**: Track objects across frames in dual-mode system
-
-**Responsibilities**:
-- Multi-object tracking using Norfair in DETECTION_MODE
-- Single-object tracking using CSRT in LOCKED_MODE
-- Manage track lifecycle (creation, update, termination)
-- Implement lost object recovery
-- Assign and maintain track IDs
-
-**Key Classes**:
-- NorfairTracker: Multi-object tracking wrapper
-- CSRTTracker: Single-object CSRT tracking wrapper
-- TrackManager: Track lifecycle and ID management
-- RecoverySystem: Lost object reacquisition
-
-**Key Functions**:
-- update_tracks: Update Norfair with new detections
-- initialize_csrt: Start CSRT tracking on selected object
-- update_csrt: Update CSRT tracker with new frame
-- check_csrt_lost: Detect CSRT tracking failure
-- recover_object: Search and reacquire lost object
-
-**Inputs**:
-- Current frame
-- Detected objects in DETECTION_MODE
-- Previous tracking state
-- Current system mode
-
-**Outputs**:
-- Updated track list with IDs and bounding boxes
-- Tracking success/failure status
-- Recovered object if found
-
-**Dependencies**:
-- Norfair library
-- OpenCV (cv2.TrackerCSRT)
-- NumPy
-
----
-
-### PTZ Control Module (src/ptz/)
-
-**Purpose**: Simulate PTZ camera control to center tracked objects
-
-**Responsibilities**:
-- Maintain PTZ state (pan, tilt, zoom)
-- Calculate control commands from object position
-- Implement proportional control with deadband
-- Apply smoothing and velocity limits
-- Calculate ROI from PTZ parameters
-- Render virtual camera view
-
-**Key Classes**:
-- PTZController: Main control logic
-- PTZState: State management (pan/tilt/zoom)
-- ROICalculator: Convert PTZ to region of interest
-- VirtualCamera: Render ROI as output frame
-
-**Key Functions**:
-- update_ptz: Calculate new PTZ values from object position
-- calculate_roi: Compute ROI bounds from PTZ state
-- extract_roi: Extract and resize ROI from frame
-- apply_deadband: Prevent jitter near center
-- smooth_motion: Apply exponential smoothing
-
-**Inputs**:
-- Object centroid in frame coordinates
-- Object bounding box dimensions
-- Current PTZ state
-- Configuration for sensitivity and limits
-
-**Outputs**:
-- Updated PTZ state
-- ROI coordinates
-- Rendered output frame
-
-**Dependencies**:
-- NumPy
-- OpenCV (for ROI extraction and resizing)
-
----
-
-### State Machine Module (src/core/state_machine.py)
-
-**Purpose**: Manage system-wide state transitions and behavior
-
-**Responsibilities**:
-- Maintain current system state (DETECTION, LOCKED, LOST, IDLE)
-- Validate and execute state transitions
-- Provide state-specific processing branches
-- Track state history for debugging
-- Manage timers and counters for state conditions
-
-**Key Functions**:
-- transition_to_detection_mode: Switch to multi-object detection
-- transition_to_locked_mode: Switch to single-object tracking
-- transition_to_lost: Enter recovery mode
-- transition_to_idle: Pause processing
-- can_transition: Validate state change
-- get_current_state: Return current state
-- handle_keyboard_input: Process input based on state
-
-**Inputs**:
-- State transition requests
-- User input events
-- Tracking success/failure flags
-- Timing information
-
-**Outputs**:
-- Current system state
-- State change notifications
-- State-specific processing flags
-
-**Dependencies**:
-- Python enum for state definitions
-- Time module for timeouts
-
----
-
-### Rendering Module (src/rendering/)
-
-**Purpose**: Visualize tracking results and pipeline stages
-
-**Responsibilities**:
-- Draw bounding boxes with state-specific colors
-- Render information overlay text
-- Display PTZ parameters and tracking status
-- Compose debug mosaic with pipeline stages
-- Draw object trajectories
-- Render track IDs and ages
-
-**Key Classes**:
-- BoundingBoxDrawer: Draw boxes and labels
-- OverlayRenderer: Text and information display
-- MosaicComposer: Debug view composition
-- TrajectoryDrawer: Path visualization
-
-**Key Functions**:
-- draw_detection_boxes: Draw cyan boxes for all tracks
-- draw_locked_box: Draw green box for locked object
-- draw_search_area: Draw red circle for lost state
-- render_overlay: Draw text information
-- compose_mosaic: Create 2x4 debug grid
-- draw_trajectory: Render object path
-
-**Inputs**:
-- Frame to draw on
-- Tracking results (boxes, IDs)
-- System state information
-- PTZ state
-- Configuration for colors and styles
-
-**Outputs**:
-- Annotated frame with visualizations
-- Debug mosaic frame
-
-**Dependencies**:
-- OpenCV (drawing functions)
-- NumPy
-
----
-
-### Application Module (src/core/application.py)
-
-**Purpose**: Main application orchestration and lifecycle
-
-**Responsibilities**:
-- Initialize all subsystems
-- Run main processing loop
-- Coordinate between modules
-- Handle errors and exceptions
-- Manage resource cleanup
-- Implement pause and quit functionality
-
-**Key Functions**:
-- initialize: Set up all components
-- run: Execute main loop
-- process_frame: State-based frame processing
-- cleanup: Release resources
-- handle_error: Error recovery
-
-**Inputs**:
-- Configuration object
-- Command-line arguments
-
-**Outputs**:
-- Processed video output
-- Telemetry data
-- Log files
-- Exit status
-
-**Dependencies**:
-- All other modules
-
----
-
-### Input Handler Module (src/input/)
-
-**Purpose**: Process user input and keyboard commands
-
-**Responsibilities**:
-- Listen for keyboard events
-- Map keys to commands based on state
-- Dispatch commands to state machine
-- Handle special keys (pause, debug toggle, quit)
-
-**Key Functions**:
-- get_key_press: Poll for keyboard input
-- interpret_command: Map key to action based on state
-- execute_command: Dispatch to appropriate handler
-
-**Inputs**:
-- Keyboard events from OpenCV
-- Current system state
-
-**Outputs**:
-- Command objects for state machine
-- System control signals
-
-**Dependencies**:
-- OpenCV (cv2.waitKey)
-
----
-
-### Utilities Module (src/utils/)
-
-**Purpose**: Shared utility functions for common operations
-
-**Responsibilities**:
-- Loguru-based logging setup and management
-- Telemetry data collection and export
-- Coordinate system transformations
-- Geometric calculations
-- Performance profiling
-
-**Key Functions**:
-- setup_logging: Configure loguru with console and file handlers, rotation, and compression
-- log_telemetry: Record tracking metrics
-- export_telemetry_csv: Save telemetry to file
-- transform_coordinates: Convert between coordinate systems
-- calculate_distance: Euclidean distance
-- calculate_iou: Intersection over union
-- profile_function: Performance measurement decorator
-
-**Logging Configuration Example**:
-```python
-from loguru import logger
-
-def setup_logging(config):
-    """Configure loguru based on application configuration"""
-    # Remove default handler
-    logger.remove()
-
-    # Add console handler
-    logger.add(
-        sys.stderr,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>",
-        level=config.get("level", "INFO"),
-        colorize=True
-    )
-
-    # Add file handler with rotation
-    if config.get("log_to_file", True):
-        logger.add(
-            config.get("log_file", "logs/tracking.log"),
-            rotation="10 MB",
-            retention="7 days",
-            compression="zip",
-            level="DEBUG",
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}"
-        )
-
-    return logger
+├── main.py              # ~250 lines
+├── tracker.py           # ~300 lines
+├── ptz.py              # ~100 lines
+├── debug_view.py       # ~100 lines
+├── config.yaml         # ~50 lines
+├── requirements.txt
+├── README.md
+└── .gitignore
+
+Total: ~750 lines of implementation code
 ```
 
-**Inputs**:
-- Various data types depending on function
-- Configuration parameters
+---
 
-**Outputs**:
-- Log entries with automatic rotation and compression
-- CSV telemetry files
-- Transformed coordinates
-- Calculated metrics
+## Development Phases
 
-**Dependencies**:
-- loguru (for logging)
-- CSV module
-- NumPy
-- Time and datetime modules
+### Phase 1: Foundation & Core Tracking (Week 1)
+
+**Goal:** Get object detection and tracking working
+
+**Duration:** 5-7 days
+
+#### Tasks
+
+**Day 1-2: Video I/O & Background Subtraction**
+- [ ] Set up project structure (5 files)
+- [ ] Implement video capture with OpenCV
+- [ ] Implement background subtraction (MOG2)
+- [ ] Add mask post-processing (opening, closing, threshold)
+- [ ] Test with sample video
+
+**Day 3-4: Multi-Object Detection with Norfair**
+- [ ] Implement contour detection and filtering
+- [ ] Convert contours to Norfair detections
+- [ ] Initialize Norfair tracker
+- [ ] Display all objects with IDs (cyan boxes)
+- [ ] Test ID persistence across frames
+
+**Day 5-7: Single-Object Tracking with CSRT/KCF**
+- [ ] Implement KCF tracker initialization
+- [ ] Add object selection by ID (keyboard 0-9)
+- [ ] Implement CSRT update loop
+- [ ] Add bbox validation
+- [ ] Implement simple state machine (3 states)
+- [ ] Test transition from DETECTION → TRACKING
+
+**Deliverable:** Video showing multi-object detection with IDs, and ability to lock onto selected object
 
 ---
 
-## Data Flow & Integration Points
+### Phase 2: PTZ Control & Visualization (Week 1-2)
 
-### Frame Processing Pipeline
+**Goal:** Add virtual PTZ and debug visualization
 
-Video File → Capture → Preprocess → State Machine Decision:
+**Duration:** 5-7 days
 
-**DETECTION_MODE Branch**:
-Frame → Background Subtraction → Mask Post-processing → Contour Detection → Object Analysis → Object Filtering → Object Selection → Norfair Update → PTZ Control → ROI Calculation → Virtual Camera → Rendering → Display/Recording
+#### Tasks
 
-**LOCKED_MODE Branch**:
-Frame → CSRT Update → Check Success → PTZ Control → ROI Calculation → Virtual Camera → Rendering → Display/Recording
+**Day 1-2: PTZ Controller**
+- [ ] Implement PTZController class
+- [ ] Calculate pan/tilt from object position
+- [ ] Calculate zoom from object size
+- [ ] Add deadband zone (prevent jitter)
+- [ ] Implement ROI extraction
+- [ ] Test PTZ keeps object centered
 
-**LOST Branch**:
-Frame → Background Subtraction → Detection → Search Area Filtering → Match Scoring → Recovery Decision → (Transition to LOCKED or DETECTION) → PTZ Hold → Rendering → Display/Recording
+**Day 3-4: Debug Mosaic**
+- [ ] Implement DebugMosaic class in debug_view.py
+- [ ] Create 2×4 grid layout
+- [ ] Add pipeline stage visualization:
+  - Original frame
+  - Raw mask
+  - Cleaned mask
+  - Contours
+  - Norfair detection
+  - CSRT tracking
+  - PTZ ROI overlay
+  - Final output
+- [ ] Add toggle with 'D' key
+- [ ] Test mosaic visualization
 
-### State Transition Triggers
+**Day 5-7: Drawing & UI**
+- [ ] Implement drawing functions:
+  - Cyan boxes for detection mode
+  - Green box for tracking mode
+  - Red circle for lost mode
+  - ID labels
+  - Status overlay
+- [ ] Add keyboard controls (R, D, Space, Q)
+- [ ] Implement video output writer
+- [ ] Test complete UI workflow
 
-**DETECTION → LOCKED**:
-- User presses numeric key matching track ID
-- Track must be valid and age > threshold
-- CSRT initialization succeeds
+**Deliverable:** Full PTZ tracking with debug mosaic and clean UI
 
-**LOCKED → LOST**:
-- CSRT update fails for threshold frames
-- Bounding box dimensions invalid
+---
 
-**LOST → LOCKED**:
-- Recovery finds matching object
-- CSRT reinitialization succeeds
+### Phase 3: Recovery & Configuration (Week 2)
 
-**LOST → DETECTION**:
-- Recovery timeout expires
-- User presses reset key
+**Goal:** Handle edge cases and add configuration
 
-**Any → DETECTION**:
-- User presses reset key
+**Duration:** 4-5 days
 
-### Configuration Flow
+#### Tasks
 
-YAML File → Config Loader → Validator → Config Object → Distributed to modules during initialization
+**Day 1-2: Recovery Mechanism**
+- [ ] Implement LOST state handling
+- [ ] Add redetection logic:
+  - Background subtraction near last position
+  - Match by size and distance
+  - Reinitialize CSRT if found
+- [ ] Add recovery timeout (3 seconds)
+- [ ] Draw search area (red circle)
+- [ ] Test recovery with occlusions
 
-### Telemetry Flow
+**Day 3-4: Configuration System**
+- [ ] Create config.yaml structure
+- [ ] Implement YAML loading
+- [ ] Add basic validation
+- [ ] Test different parameter combinations
+- [ ] Document all parameters
 
-Module Events → Telemetry Collector → In-Memory Buffer → Periodic CSV Write → Log File
+**Day 5: Polish**
+- [ ] Handle edge cases:
+  - No objects detected
+  - Object leaves frame
+  - Invalid bbox
+  - Video end/loop
+- [ ] Add error messages
+- [ ] Test with various videos
+
+**Deliverable:** Robust system with configuration and error handling
+
+---
+
+### Phase 4: Testing & Documentation (Week 3)
+
+**Goal:** Ensure quality and usability
+
+**Duration:** 3-5 days
+
+#### Tasks
+
+**Day 1-2: Testing**
+- [ ] Test with different video types:
+  - Single object
+  - Multiple objects
+  - Fast motion
+  - Occlusions
+  - Different lighting
+- [ ] Performance testing:
+  - Measure FPS at 720p and 1080p
+  - Check memory usage
+  - Identify bottlenecks
+- [ ] Fix bugs found during testing
+
+**Day 3-4: Documentation**
+- [ ] Update README with:
+  - Quick start guide
+  - Installation instructions
+  - Usage examples
+  - Keyboard controls
+- [ ] Add code comments
+- [ ] Create example configuration files
+- [ ] Record demo video
+
+**Day 5: Final Review**
+- [ ] Code review and cleanup
+- [ ] Verify all success criteria met
+- [ ] Create release notes
+- [ ] Tag version 1.0
+
+**Deliverable:** Production-ready MVP with documentation
+
+---
+
+## Detailed Module Implementation
+
+### Module 1: main.py (~250 lines)
+
+**Purpose:** Application entry point, main loop, state machine
+
+**Components:**
+- Video I/O setup
+- Main processing loop
+- State machine (3 states)
+- Keyboard input handling
+- UI coordination
+- Drawing functions
+
+**Key Functions:**
+```python
+def load_config(path)
+def draw_detection_mode(frame, tracked_objects)
+def draw_tracking_mode(frame, bbox, obj_id)
+def draw_lost_mode(frame, last_bbox, search_radius)
+def draw_status_overlay(frame, state, ptz, fps)
+def main()
+```
+
+**Estimated Time:** 3-4 days
+
+---
+
+### Module 2: tracker.py (~300 lines)
+
+**Purpose:** Object detection and tracking logic
+
+**Components:**
+- Background subtraction (OpenCV MOG2/KNN)
+- Mask post-processing
+- Contour detection
+- Norfair multi-object tracking
+- CSRT/KCF single-object tracking
+- Recovery logic
+
+**Key Class:**
+```python
+class ObjectTracker:
+    def __init__(self, config)
+    def update_detection_mode(self, frame)
+    def lock_onto_object(self, frame, object_id)
+    def update_tracking_mode(self, frame)
+    def update_lost_mode(self, frame)
+    def reset_to_detection_mode()
+```
+
+**Estimated Time:** 4-5 days
+
+---
+
+### Module 3: ptz.py (~100 lines)
+
+**Purpose:** Virtual PTZ calculations and ROI extraction
+
+**Components:**
+- PTZ state (pan, tilt, zoom)
+- Proportional control
+- Deadband logic
+- ROI calculation
+- ROI extraction and resizing
+
+**Key Class:**
+```python
+class PTZController:
+    def __init__(self, frame_shape, config)
+    def update(self, bbox)
+    def extract_roi(self, frame)
+    def reset()
+```
+
+**Estimated Time:** 2 days
+
+---
+
+### Module 4: debug_view.py (~100 lines)
+
+**Purpose:** Debug mosaic visualization
+
+**Components:**
+- 2×4 grid layout
+- Tile preparation
+- Label overlay
+- Grayscale to color conversion
+
+**Key Class:**
+```python
+class DebugMosaic:
+    def __init__(self, config)
+    def create_mosaic(self, pipeline_stages)
+    def _prepare_tile(self, frame, label)
+```
+
+**Helper Functions:**
+```python
+def draw_contours_on_frame(frame, mask)
+def draw_ptz_roi_overlay(frame, ptz_state)
+```
+
+**Estimated Time:** 2 days
+
+---
+
+### Module 5: config.yaml (~50 lines)
+
+**Purpose:** Configuration parameters
+
+**Sections:**
+- video (input/output)
+- background_subtraction (algorithm, parameters)
+- object_detection (filtering criteria)
+- tracking (Norfair, CSRT, recovery)
+- ptz (sensitivity, limits)
+- display (windows, debug mosaic)
+
+**Estimated Time:** 1 day (spread across phases)
+
+---
+
+## Dependencies
+
+### Required Libraries
+
+```txt
+opencv-python>=4.5.0  # Computer vision
+numpy>=1.19.0         # Numerical operations
+norfair>=2.0.0        # Multi-object tracking
+pyyaml>=5.0           # Configuration
+```
+
+### Installation
+
+**Option 1: pip**
+```bash
+pip install -r requirements.txt
+```
+
+**Option 2: Pixi (recommended)**
+```bash
+pixi install
+pixi run python main.py
+```
 
 ---
 
 ## Testing Strategy
 
-### Unit Testing Approach
+### Unit Testing (Optional for MVP)
 
-**Test each module in isolation**:
-- Mock dependencies using pytest fixtures
-- Test boundary conditions and edge cases
-- Validate error handling
-- Test configuration variations
+Focus on critical functions:
+- PTZ calculations (pan, tilt, zoom, ROI)
+- Bbox validation
+- State transitions
 
-**Coverage Goals**:
-- Minimum 80% code coverage
-- 100% coverage for critical paths (state transitions, PTZ calculations)
+### Integration Testing
 
-### Integration Testing Approach
-
-**Test module interactions**:
-- Use real video files from fixtures
-- Test full pipeline with different configurations
-- Validate state transitions with real scenarios
-- Test error propagation between modules
+Test complete workflows:
+1. Video load → Detection → Selection → Tracking → Output
+2. Tracking loss → Recovery → Reacquisition
+3. Multiple state transitions
+4. Debug mosaic display
 
 ### Performance Testing
 
-**Benchmarks to validate**:
-- Frame processing time < 33ms for 30 FPS real-time
-- Memory usage stable over 1000+ frames
-- Algorithm comparison for speed vs accuracy tradeoff
+Measure and optimize:
+- FPS at different resolutions
+- Memory usage over time
+- Processing latency
 
-### Test Data Requirements
+### Test Videos
 
-**Video fixtures needed**:
-- Single object in center
+Prepare test cases:
+- Single object, slow motion
 - Multiple objects
+- Fast motion
+- Occlusions
+- Lighting changes
 - Object entering/leaving frame
-- Occlusion scenarios
-- Different lighting conditions
-- Different resolutions
-
----
-
-## Deployment & Maintenance
-
-### Installation Methods
-
-**Primary: Pixi**
-- Use pixi.toml for environment management
-- Cross-platform compatibility
-- Automatic dependency resolution
-
-**Secondary: pip**
-- Provide requirements.txt
-- Support virtual environments
-
-### Configuration Management
-
-**Default configuration**:
-- Embedded defaults in code
-- config.yaml for user customization
-- Command-line overrides for testing
-
-**Profile-based configurations**:
-- Provide example configs for common scenarios
-- Outdoor vs indoor
-- High accuracy vs high performance
-- Different camera types
-
-### Logging and Debugging
-
-**Log levels** (loguru):
-- TRACE: Detailed diagnostic information
-- DEBUG: Frame-by-frame state changes and detailed processing info
-- INFO: Significant events (state transitions, object selection)
-- SUCCESS: Successful operations (tracker initialization, recovery)
-- WARNING: Recoverable errors (CSRT loss, tracking degradation)
-- ERROR: Critical failures with full stack traces
-- CRITICAL: Application-level failures
-
-**Loguru features**:
-- Automatic colored console output for better readability
-- File rotation by size (e.g., 10 MB) or time (e.g., daily)
-- Automatic compression of rotated logs (zip format)
-- Retention policy (e.g., keep logs for 7 days)
-- Contextual logging with `.bind()` for adding context
-- Better exception logging with full tracebacks
-
-**Debug tools**:
-- Mosaic view for pipeline visualization
-- Telemetry export for post-analysis
-- Performance profiling decorators
-- Rich log format with module, function, and line numbers
-
-### Maintenance Considerations
-
-**Code organization**:
-- Modular design for easy updates
-- Abstract interfaces for algorithm swapping
-- Configuration-driven behavior
-
-**Extension points**:
-- Additional BGS algorithms
-- Alternative tracking methods
-- Custom object selection strategies
-- New visualization modes
-
-**Version control**:
-- Git for source control
-- Semantic versioning
-- Changelog maintenance
-- Branch strategy for features
-
-### Performance Optimization Opportunities
-
-**Potential bottlenecks**:
-- Background subtraction (algorithm choice critical)
-- Morphological operations (kernel size matters)
-- ROI extraction and resizing (interpolation method)
-- Debug mosaic composition (disable in production)
-
-**Optimization strategies**:
-- Frame skipping for non-real-time use
-- Reduce processing resolution
-- Optimize contour detection parameters
-- Use faster BGS algorithms
-- Disable unnecessary visualizations
-
----
-
-## Risk Assessment & Mitigation
-
-### Technical Risks
-
-**Risk: CSRT tracking failures in challenging conditions**
-- Mitigation: Implement robust recovery mechanism, tunable timeout
-
-**Risk: Performance below real-time on target hardware**
-- Mitigation: Configurable frame skipping, algorithm selection guide
-
-**Risk: Memory leaks in long-running sessions**
-- Mitigation: Proper resource management, periodic profiling
-
-### Usability Risks
-
-**Risk: Complex configuration overwhelming users**
-- Mitigation: Provide sensible defaults, example configs, validation
-
-**Risk: Unclear system state during operation**
-- Mitigation: Clear visual indicators, status overlay, logging
-
-**Risk: Difficult debugging when tracking fails**
-- Mitigation: Debug mosaic, telemetry export, comprehensive logging
 
 ---
 
@@ -1190,60 +413,198 @@ Module Events → Telemetry Collector → In-Memory Buffer → Periodic CSV Writ
 
 ### Functional Requirements
 
-- System successfully processes video files with background subtraction
-- Multi-object tracking in DETECTION_MODE with ID assignment
-- Single-object CSRT tracking in LOCKED_MODE with keyboard selection
-- Automatic recovery from tracking loss within 3 seconds
-- Virtual PTZ control centers objects with smooth motion
-- Debug mosaic displays all pipeline stages correctly
-- Configuration file controls all major parameters
+✅ **Video Processing**
+- Loads video files
+- Processes frames in real-time (≥20 FPS)
+- Saves output video
 
-### Performance Requirements
+✅ **Detection**
+- Detects multiple moving objects
+- Assigns persistent IDs (0-9)
+- Filters noise effectively
 
-- Process 30 FPS video at 1920x1080 resolution
-- Frame latency under 50ms on modern hardware
-- Memory usage under 500MB for 5-minute video
-- No memory leaks over extended runtime
+✅ **Tracking**
+- User can select object by ID
+- Tracks selected object accurately
+- Handles tracking loss gracefully
 
-### Quality Requirements
+✅ **PTZ Control**
+- Keeps object centered
+- Smooth pan/tilt/zoom
+- Respects deadband zone
 
-- Code coverage above 80%
-- All tests passing in CI/CD pipeline
-- Documentation complete for all public APIs
-- User guide with examples and troubleshooting
+✅ **Visualization**
+- Debug mosaic shows pipeline stages
+- Clear visual indicators for states
+- Status overlay with info
+
+✅ **Usability**
+- Keyboard controls work
+- Configuration is simple
+- Easy to understand and modify
+
+### Code Quality Requirements
+
+✅ **Clean Code**
+- ~750 lines total
+- Single responsibility per module
+- Clear function names
+- Minimal comments needed (self-documenting)
+
+✅ **Maintainability**
+- Easy to understand
+- Easy to debug
+- Easy to extend
+
+✅ **Documentation**
+- README with quick start
+- Code comments where needed
+- Example configurations
 
 ---
 
-## Timeline Estimation
+## Risk Management
 
-**Phase 1-2 (Foundation & Video I/O)**: 3-5 days
-**Phase 3 (Background Subtraction)**: 4-6 days
-**Phase 4 (Object Detection)**: 3-4 days
-**Phase 5 (State Machine)**: 2-3 days
-**Phase 6 (Norfair Tracking)**: 3-4 days
-**Phase 7 (CSRT & Recovery)**: 4-5 days
-**Phase 8 (PTZ Control)**: 4-6 days
-**Phase 9 (Rendering)**: 3-4 days
-**Phase 10 (Output)**: 2-3 days
-**Phase 11 (Main Loop)**: 3-4 days
-**Phase 12 (Testing)**: 5-7 days
-**Phase 13 (Documentation)**: 2-3 days
+### Technical Risks
 
-**Total Estimated Duration**: 38-54 days (7-10 weeks)
+| Risk | Mitigation |
+|------|------------|
+| **Norfair ID persistence issues** | Test with various scenarios, adjust parameters |
+| **CSRT tracking failures** | Implement robust recovery, test with difficult videos |
+| **Performance below target** | Use KCF instead of CSRT, reduce resolution |
+| **PTZ jitter** | Tune deadband and smoothing parameters |
 
-**Note**: Timeline assumes single developer working full-time. Adjust for team size and part-time work.
+### Schedule Risks
+
+| Risk | Mitigation |
+|------|------------|
+| **Feature creep** | Stick to MVP scope, defer non-essentials |
+| **Unexpected complexity** | Time-boxed tasks, ask for help if blocked |
+| **Testing takes longer** | Start testing early, test incrementally |
+
+---
+
+## Timeline Summary
+
+### Week 1 (Days 1-7)
+- Video I/O & background subtraction
+- Norfair multi-object tracking
+- CSRT single-object tracking
+- Basic state machine
+
+### Week 2 (Days 8-14)
+- PTZ controller
+- Debug mosaic
+- UI and drawing functions
+- Recovery mechanism
+- Configuration system
+
+### Week 3 (Days 15-21)
+- Testing with various videos
+- Bug fixes
+- Documentation
+- Polish and release
+
+**Total: 15-21 days (3 weeks)**
+
+---
+
+## Post-MVP Roadmap
+
+### Version 1.1 (Optional Enhancements)
+- Better logging (loguru with rotation)
+- Telemetry export (CSV)
+- More background subtraction algorithms
+- Performance profiling
+
+### Version 2.0 (Future Features)
+- Deep learning detection (YOLO)
+- Physical PTZ camera support
+- Real-time camera streams
+- Multiple object simultaneous tracking
+- Trajectory analysis
+
+### Version 3.0 (Advanced Features)
+- Configuration UI
+- Cloud integration
+- Multi-camera support
+- Event detection and alerts
+
+---
+
+## Development Best Practices
+
+### Code Organization
+
+- **One class per file** (except helper functions)
+- **Clear module boundaries**
+- **Minimal inter-module dependencies**
+
+### Coding Standards
+
+- **PEP 8** style guide
+- **Type hints** for function signatures
+- **Docstrings** for public functions
+- **Descriptive variable names**
+
+### Git Workflow
+
+- **Feature branches** for each phase
+- **Frequent commits** with clear messages
+- **Test before committing**
+- **Code review** before merging
+
+### Development Tools
+
+- **VSCode** or **PyCharm** for IDE
+- **Git** for version control
+- **Pixi** for environment management
+- **pytest** for testing (if time allows)
+
+---
+
+## Resource Requirements
+
+### Hardware
+
+- **CPU**: Multi-core processor (i5/Ryzen 5 or better)
+- **RAM**: 8GB minimum, 16GB recommended
+- **Storage**: 10GB for videos and outputs
+
+### Software
+
+- **Python**: 3.8-3.11
+- **OS**: Linux, macOS, or Windows
+- **Git**: Version control
+- **Pixi**: Package management
+
+### Sample Videos
+
+Prepare test videos:
+- Resolution: 720p to 1080p
+- Duration: 30 seconds to 2 minutes
+- Various scenarios (indoor, outdoor, single/multi object)
 
 ---
 
 ## Conclusion
 
-This project plan provides a comprehensive roadmap for implementing the PTZ Camera Object Tracking System. The modular architecture ensures maintainability and extensibility, while the dual-mode tracking approach balances multi-object awareness with high-accuracy single-object tracking.
+This simplified project plan focuses on delivering a **working MVP in 2-3 weeks** with **clean, maintainable code**. By following the YAGNI principle and deferring non-essential features, we can create a solid foundation that's easy to understand, use, and extend.
 
-Key success factors:
-- Rigorous testing at each phase
-- Clear module contracts preventing coupling
-- Configuration-driven behavior for flexibility
-- Robust state management for reliability
-- Comprehensive documentation for usability
+**Key Success Factors:**
+1. **Focus on MVP** - Don't add features not in the plan
+2. **Test incrementally** - Verify each component works before moving on
+3. **Keep it simple** - If something seems complex, simplify it
+4. **Document as you go** - Don't leave docs for the end
 
-The phased approach allows for incremental development and validation, with each phase building on the previous foundation. Regular testing and integration checkpoints will ensure the system meets performance and quality requirements.
+**Next Steps:**
+1. Review and approve this plan
+2. Set up development environment
+3. Begin Phase 1: Foundation & Core Tracking
+4. Iterate based on feedback
+
+---
+
+**Document Version:** 2.0 (Simplified 3-Week Plan)
+**Previous Version:** 1.0 (13-Phase 7-10 Week Plan)
+**Changes:** Reduced to 4 phases, 2-3 weeks, focused on MVP, removed over-engineering

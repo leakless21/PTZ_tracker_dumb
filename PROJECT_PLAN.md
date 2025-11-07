@@ -365,8 +365,7 @@ PTZ_tracker_dumb/
 ├── README.md                        # User-facing documentation
 ├── TECHNICAL_SPECIFICATIONS.md      # Complete technical specifications
 ├── PROJECT_PLAN.md                  # This file - project planning document
-├── pyproject.toml                   # Pixi/Poetry project configuration
-├── pixi.toml                        # Pixi environment configuration
+├── pixi.toml                        # Pixi project configuration and dependencies
 ├── .gitignore                       # Git ignore patterns
 │
 ├── main.py                          # Application entry point

@@ -176,30 +176,30 @@ The system has **four primary states**:
 ### 3.3 State Transition Diagram
 
 '''
-                    ┌──────────────┐
-                    │   IDLE       │
-                    └──────┬───────┘
-                           │ Video loaded
-                           ▼
-                    ┌──────────────┐
-          ┌────────▶│  DETECTION   │◀────────┐
-          │         │    MODE      │         │
-          │         └──────┬───────┘         │
-          │                │ User presses    │
-          │                │ number (0-9)    │
-          │                ▼                 │
-          │         ┌──────────────┐         │
-          │         │   LOCKED     │         │
-          │         │    MODE      │         │
-          │         └──────┬───────┘         │
-          │                │ CSRT lost       │
-          │                ▼                 │
-Recovery  │         ┌──────────────┐         │ Timeout
-timeout   │         │    LOST      │         │ or manual
-or manual │         │ (searching)  │─────────┘ release
-release   │         └──────┬───────┘
-          │                │ Object found
-          └────────────────┘
+┌──────────────┐
+│ IDLE │
+└──────┬───────┘
+│ Video loaded
+▼
+┌──────────────┐
+┌────────▶│ DETECTION │◀────────┐
+│ │ MODE │ │
+│ └──────┬───────┘ │
+│ │ User presses │
+│ │ number (0-9) │
+│ ▼ │
+│ ┌──────────────┐ │
+│ │ LOCKED │ │
+│ │ MODE │ │
+│ └──────┬───────┘ │
+│ │ CSRT lost │
+│ ▼ │
+Recovery │ ┌──────────────┐ │ Timeout
+timeout │ │ LOST │ │ or manual
+or manual │ │ (searching) │─────────┘ release
+release │ └──────┬───────┘
+│ │ Object found
+└────────────────┘
 '''
 
 ### 3.4 System State Data Structure
@@ -775,7 +775,9 @@ The Tracking Controller implements the dual-mode tracking system described in **
 
 '''bash
 pip install norfair
+
 # or with Pixi:
+
 pixi add --pypi norfair
 '''
 
@@ -2265,13 +2267,17 @@ Provide test videos covering:
 Visit: <https://pixi.sh> or install via:
 
 '''bash
+
 # Linux/macOS
+
 curl -fsSL https://pixi.sh/install.sh | bash
 
 # Windows (PowerShell)
+
 iwr -useb https://pixi.sh/install.ps1 | iex
 
 # Verify installation
+
 pixi --version
 '''
 
@@ -2302,69 +2308,16 @@ pixi --version
 - **ipython**: Enhanced interactive shell
 - **pytest**: Testing framework (for unit tests)
 
-#### 21.2.4 Pixi Configuration File (pyproject.toml)
+#### 21.2.4 Pixi Configuration File (pixi.toml)
 
-Create `pyproject.toml` in project root:
+Create `pixi.toml` in project root:
 
 ```toml
 [project]
 name = "ptz-tracker"
 version = "0.1.0"
 description = "PTZ Camera Object Tracking System with Background Subtraction"
-authors = [{name = "Your Name", email = "your.email@example.com"}]
-requires-python = ">=3.8,<3.12"
-readme = "README.md"
-license = {text = "MIT"}
-
-[tool.pixi.project]
-channels = ["conda-forge"]
-platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
-
-[tool.pixi.dependencies]
-python = ">=3.8,<3.12"
-opencv = ">=4.5"
-numpy = ">=1.19"
-pyyaml = ">=5.0"
-
-[tool.pixi.feature.viz.dependencies]
-matplotlib = ">=3.5"
-pandas = ">=1.3"
-
-[tool.pixi.feature.dev.dependencies]
-ipython = "*"
-pytest = ">=7.0"
-
-# Tasks for common operations
-[tool.pixi.tasks]
-# Run the main tracking application
-track = "python main.py"
-
-# Run with specific config
-track-config = "python main.py --config config.yaml"
-
-# Run tests
-test = "pytest tests/"
-
-# Interactive Python shell
-shell = "ipython"
-
-# Clean generated files
-clean = "rm -rf output/*.mp4 logs/*.log"
-
-[tool.pixi.environments]
-default = {solve-group = "default"}
-viz = {features = ["viz"], solve-group = "default"}
-dev = {features = ["dev", "viz"], solve-group = "default"}
-```
-
-#### 21.2.5 Alternative: Minimal pixi.toml
-
-For simpler projects, use `pixi.toml`:
-
-```toml
-[project]
-name = "ptz-tracker"
-version = "0.1.0"
+authors = ["Your Name <your.email@example.com>"]
 channels = ["conda-forge"]
 platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
 
@@ -2372,83 +2325,112 @@ platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
 python = ">=3.8,<3.12"
 opencv = ">=4.5"
 numpy = ">=1.19"
+pyyaml = ">=5.0"
+
+[feature.viz.dependencies]
+matplotlib = ">=3.5"
+pandas = ">=1.3"
+
+[feature.dev.dependencies]
+ipython = "*"
+pytest = ">=7.0"
 
 [tasks]
 track = "python main.py"
+track-config = "python main.py --config config.yaml"
+test = "pytest tests/"
+shell = "ipython"
+clean = "rm -rf output/*.mp4 logs/*.log"
+
+[environments]
+default = {features = ["dev", "viz"]}
 ```
 
-#### 21.2.6 Project Setup with Pixi
+#### 21.2.5 Project Setup with Pixi
 
 **Initial Setup:**
 
 '''bash
+
 # Navigate to project directory
+
 cd PTZ_tracker_dumb
 
 # Initialize Pixi project (if not already done)
+
 pixi init
 
-# Or use the pyproject.toml above and install
+# Or use the pixi.toml above and install
+
 pixi install
-
-# Install with visualization features
-pixi install --environment viz
-
-# Install development environment
-pixi install --environment dev
 '''
 
 **Running the Application:**
 
 '''bash
+
 # Run main tracking application
+
 pixi run track
 
 # Run with specific config file
+
 pixi run track-config
 
 # Or run Python directly in Pixi environment
+
 pixi run python main.py
 
 # Run with arguments
+
 pixi run python main.py --input video.mp4 --output result.mp4
 '''
 
 **Development Workflow:**
 
 '''bash
+
 # Enter Pixi shell (activates environment)
+
 pixi shell
 
 # Now you're in the environment, run commands normally:
+
 python main.py
 ipython
 pytest tests/
 
 # Exit shell
+
 exit
 '''
 
 **Managing Dependencies:**
 
 '''bash
+
 # Add a new dependency
+
 pixi add scipy
 
 # Add PyPI package
+
 pixi add --pypi scikit-image
 
 # Remove dependency
+
 pixi remove scipy
 
 # Update all dependencies
+
 pixi update
 
 # Show installed packages
+
 pixi list
 '''
 
-#### 21.2.7 Environment Isolation
+#### 21.2.6 Environment Isolation
 
 Pixi automatically handles environment isolation:
 
@@ -2457,68 +2439,60 @@ Pixi automatically handles environment isolation:
 - **Automatic environment selection** based on tasks/commands
 - **Per-project environments** (not system-wide)
 
-#### 21.2.8 Cross-Platform Compatibility
+#### 21.2.7 Cross-Platform Compatibility
 
 Pixi ensures the project works across platforms:
 
 '''bash
+
 # On Linux
+
 pixi run track
 
 # On macOS (ARM or Intel)
+
 pixi run track
 
 # On Windows
+
 pixi run track
 '''
 
 Same commands, same results!
 
-#### 21.2.9 Quick Start Commands
+#### 21.2.8 Quick Start Commands
 
 '''bash
+
 # Clone and setup
+
 git clone <repository-url>
 cd PTZ_tracker_dumb
 pixi install
 
 # Run application
+
 pixi run track
 
 # Run with custom video
+
 pixi run python main.py --input path/to/video.mp4
 
 # Development mode
+
 pixi shell
-python main.py  # Run inside Pixi shell
+python main.py # Run inside Pixi shell
 
 # Run tests
+
 pixi run test
-'''
-
-#### 21.2.10 Legacy pip Installation (Alternative)
-
-If Pixi is not available, fall back to traditional pip:
-
-'''bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/macOS
-# or: venv\Scripts\activate  # Windows
-
-# Install dependencies
-pip install opencv-python numpy pyyaml
-
-# Run application
-python main.py
 '''
 
 ### 21.3 Project Structure
 
 ```
 PTZ_tracker_dumb/
-├── pyproject.toml                 # Pixi configuration (recommended)
-├── pixi.toml                      # Alternative minimal Pixi config
+├── pixi.toml                      # Pixi project configuration
 ├── pixi.lock                      # Pixi lock file (auto-generated)
 ├── config.yaml                    # Application configuration
 ├── .gitignore                     # Git ignore rules

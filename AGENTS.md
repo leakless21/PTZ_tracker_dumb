@@ -1,102 +1,147 @@
-# Development Guidelines
+# PTZ Tracker – Engineering Guide for Agents
 
-Development guidelines and best practices for this project.
+This AGENTS.md applies to the entire repository (root scope). It captures how we build and modify the PTZ Camera Object Tracking System. Keep the core principles; tailor decisions to this Python computer‑vision project.
 
 ---
 
-## SOLID Principles
+## Language, Tools, and Commands
 
-Five design principles that make software more maintainable, flexible, and scalable.
+- Python: 3.13 (per `pixi.toml`)
+- Style: PEP 8, type hints on public functions, concise docstrings
+- Env: Pixi recommended
+  - Run: `pixi run start`
+  - Dev shell: `pixi shell`
+  - Version check: `pixi run version`
+- Optional pip path is fine for users, but do not commit pip-only scripts.
+- Logging: Loguru (console + rotating file)
+
+---
+
+## Core Principles (Project‑Adapted)
 
 ### Single Responsibility (SRP)
 
-Each class should have only one reason to change, with one specific responsibility.
+Each module/class has one reason to change.
 
-- Separate UI widgets from business logic
-- Keep repositories focused on data operations only
-- Isolate validation logic into dedicated validator classes
-- Benefits: easier testing, clearer code purpose, simpler maintenance
+- Keep state machine and I/O in `main.py`; keep CV logic in `tracker.py`
+- Put PTZ math and ROI in `ptz.py` only
+- Keep visualization helpers in `debug_view.py`
+- Validation/parsing lives with config‑loading utilities, not in processing loops
+- Benefit: simpler tests, predictable changes, easier performance tuning
 
 ### Open/Closed (OCP)
 
-Software entities should be open for extension but closed for modification.
+Open to extension via composition/strategy; closed to risky edits.
 
-- Use abstract classes and interfaces to define contracts
-- Extend functionality by creating new implementations, not modifying existing code
-- Example: Create `PaymentMethod` interface, then extend with `CreditCard`, `PayPal`, etc.
-- Benefits: reduces bugs in existing code, safer to add features
+- Add new trackers or filters by new functions/classes and selection in config rather than editing existing logic
+- Example: new background subtraction preset ⇒ add a creator function; do not rewrite call sites
+- Benefit: safer iteration under MVP timelines
 
 ### Liskov Substitution (LSP)
 
-Objects of a subclass must be substitutable for objects of their parent class.
+Swappable components must honor expectations.
 
-- Subclasses should strengthen, not weaken, parent class behavior
-- Don't throw exceptions in overridden methods that parent doesn't throw
-- Example: If `Bird` has `move()`, all bird subclasses should implement valid movement
-- Benefits: predictable behavior, safer inheritance hierarchies
+- If swapping `KCF` with `CSRT`, both must expose `init(frame, bbox)` and `update(frame) -> (ok, bbox)` semantics and valid bbox constraints
+- Do not introduce behavior that requires caller special‑casing one tracker
+- Benefit: predictable state transitions, fewer edge bugs
 
 ### Interface Segregation (ISP)
 
-Clients shouldn't be forced to depend on interfaces they don't use.
+Keep interfaces small and focused.
 
-- Create small, focused interfaces instead of large, monolithic ones
-- Split `Worker` interface into `Workable`, `Eatable`, `Sleepable`
-- Classes implement only the interfaces they need
-- Benefits: more flexible code, easier to implement and test
+- Separate responsibilities: detection vs. single‑object tracking vs. PTZ control
+- Utilities should not expose unrelated knobs; prefer small helpers (e.g., `clean_mask`, `is_valid_bbox`)
+- Benefit: targeted tests and easier refactors
 
 ### Dependency Inversion (DIP)
 
-Depend on abstractions, not concrete implementations.
+Depend on abstractions/config, not concretes.
 
-- High-level modules shouldn't depend on low-level modules
-- Use dependency injection to provide implementations
-- Define abstract `DataSource`, inject `ApiClient` or `LocalDatabase`
-- Benefits: easier testing with mocks, flexible architecture, decoupled code
-
----
-
-## DRY Principle (Don't Repeat Yourself)
-
-- Extract repeated UI patterns into reusable widgets
-- Use Dart mixins to share functionality across classes
-- Separate business logic from UI components
-- Create utility functions for common operations
-- Benefits: less code, easier maintenance, fewer bugs, better testing
+- Pass in configuration and creators (factory functions) for trackers/BS models; avoid globally constructed singletons
+- Keep `tracker.py` free from direct I/O assumptions; return data needed by `main.py`
+- Benefit: easier mocking, reproducible runs
 
 ---
 
-## KISS Principle (Keep It Simple, Stupid)
+## DRY (Don’t Repeat Yourself)
 
-- Use Flutter's built-in widgets instead of creating complex custom solutions
-- Write self-explanatory code with clear variable/function names
-- Avoid over-engineering simple problems
-- Minimize external dependencies
-- Break down complex widgets into smaller, manageable pieces
-- Start simple, add complexity only when necessary
+- Extract repeated drawing (boxes, labels, status) into small helpers
+- Centralize mask cleaning and bbox validation
+- Reuse config accessors with defaults; avoid scattering magic numbers
+- Avoid duplicate keyboard handling; centralize key map in `main.py`
 
 ---
 
-## YAGNI Principle (You Aren't Gonna Need It)
+## KISS (Keep It Simple)
 
-Don't implement functionality until it's actually needed.
+- Keep functions short and intention‑revealing; descriptive names over comments
+- Limit parameters exposed to those in `config.yaml`; sane defaults over elaborate tuning
+- Avoid premature threading/async; measure first
 
-- Resist the urge to build features "just in case" they might be useful later
-- Focus on current requirements, not hypothetical future needs
-- Don't create abstract layers for one implementation
-- Avoid premature optimization before measuring performance
-- Don't build configuration systems until you need configurability
-- Wait for actual use cases before adding flexibility
-- Benefits: less code to maintain, faster delivery, lower complexity, easier to change
+---
+
+## YAGNI (You Aren’t Gonna Need It)
+
+- No deep learning detectors, ONVIF, or RTSP in MVP
+- Use Loguru for logging; keep setup minimal (console + rotating file)
+- No plugin systems or DI frameworks; simple factories/config flags suffice
+- Don’t add new states, files, or layers unless required by current success criteria
+
+---
+
+## Coding Standards
+
+- Naming: `snake_case` for functions/vars, `PascalCase` for classes, module‑level constants in `UPPER_SNAKE`
+- Types: annotate public functions; return `Tuple[bool, Tuple[int,int,int,int]]` for trackers
+- Errors: validate bboxes and bounds; fail fast with clear messages
+- Imports: standard lib, third‑party, local — in that order
+- File size targets (soft): `main.py`~250, `tracker.py`~300, `ptz.py`~100, `debug_view.py`~100
+
+---
+
+## Testing and Validation
+
+- Start with targeted tests near helpers (e.g., PTZ math, bbox validation)
+- If `pytest` exists, use it; otherwise keep simple assertions in ad‑hoc scripts during MVP
+- Manual validation: verify state transitions, FPS targets, and overlay semantics match specs
+
+---
+
+## Performance Guardrails
+
+- Targets: 720p ≥30 FPS; 1080p ≥20 FPS
+- Avoid unnecessary copies/conversions; prefer in‑place OpenCV ops
+- Batch small drawing operations where reasonable
+- Use `KCF` when FPS dips; make it a config switch, not hardcoded
+
+---
+
+## Configuration Conventions
+
+- Only parameters described in `TECHNICAL_SPECIFICATIONS.md`/`config.yaml`
+- Defaults must be safe and produce visible output without edits
+- Validation: clamp values, log warnings, don’t crash on minor config issues
+
+---
+
+## Git and Changes
+
+- Small, focused commits with imperative messages
+- Do not rename core files without updating docs and tasks
+- Update `README.md` and `TECHNICAL_SPECIFICATIONS.md` when behavior or parameters change
+
+---
+
+## Quick Reference
+
+- Run default: `pixi run track`
+- Run with config: `pixi run track-config`
+- Enter shell: `pixi shell`
+- Colors: detection cyan, tracking green, lost red
+- Keys: 0–9 select, R reset, D debug mosaic, Space pause, Q/ESC quit
 
 ---
 
 ## Summary
 
-Following these principles results in:
-
-- Maintainable, extendable code
-- Fewer bugs and faster debugging
-- Better team collaboration
-- Professional quality standards
-
-**Remember: Good code is simple, clear, and purposeful.**
+Keep it simple, focused, and measurable. Preserve three states, and core visual semantics. Extend by composition and config, not rewrites. Good code here is simple, clear, and purposeful.

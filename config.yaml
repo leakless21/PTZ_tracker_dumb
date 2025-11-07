@@ -4,74 +4,74 @@
 video:
   input_path: "input.mp4"
   output_path: "output.mp4"
-  output_codec: "mp4v"  # Options: mp4v, X264, MJPG
+  output_codec: "mp4v" # Options: mp4v, X264, MJPG
   save_output: true
   loop_playback: false
-  process_every_n_frames: 1  # Process every frame (1 = all frames)
+  process_every_n_frames: 1 # Process every frame (1 = all frames)
 
 # Background Subtraction (OpenCV only)
 background_subtraction:
-  algorithm: "MOG2"  # Options: MOG2 (recommended), KNN
+  algorithm: "MOG2" # Options: MOG2 (recommended), KNN
   history: 500
-  var_threshold: 16.0  # For MOG2
-  dist2_threshold: 400.0  # For KNN
+  var_threshold: 50 # For MOG2
+  dist2_threshold: 400.0 # For KNN
   detect_shadows: true
-  learning_rate: -1  # -1 for automatic, or 0.001-0.1
+  learning_rate: -1 # -1 for automatic, or 0.001-0.1
 
 # Foreground Mask Post-Processing (Simplified)
 # Pipeline: Opening -> Closing -> Threshold
 mask_processing:
   enable: true
-  kernel_size: 5  # Morphological kernel size: 3, 5, 7 (default: 5)
-  threshold_value: 127  # Binary threshold: 100-150 (default: 127)
+  kernel_size: 5 # Morphological kernel size: 3, 5, 7 (default: 5)
+  threshold_value: 127 # Binary threshold: 100-150 (default: 127)
 
 # Object Detection
 object_detection:
-  min_area: 500  # Minimum contour area in pixels
-  max_area_fraction: 0.3  # Maximum area as fraction of frame (0.0-1.0)
+  min_area: 20 # Minimum contour area in pixels
+  max_area_fraction: 0.3 # Maximum area as fraction of frame (0.0-1.0)
   min_aspect_ratio: 0.2
   max_aspect_ratio: 5.0
   min_solidity: 0.3
   min_extent: 0.2
-  selection_strategy: "largest"  # Options: largest, center, previous
+  selection_strategy: "largest" # Options: largest, center, previous
 
 # Tracking (Simplified)
 tracking:
-  tracker: "KCF"  # KCF (fast, recommended) or CSRT (accurate)
+  tracker: "CSRT" # KCF (fast, recommended) or CSRT (accurate)
 
   # Norfair Multi-Object Tracking (Detection Mode)
   norfair:
-    distance_threshold: 50  # Maximum pixels for object association
-    hit_counter_max: 10  # Frames to keep track without detection
-    initialization_delay: 3  # Frames before confirming new track
+    distance_threshold: 50 # Maximum pixels for object association
+    hit_counter_max: 10 # Frames to keep track without detection
+    initialization_delay: 3 # Frames before confirming new track
 
   # Object Selection
   selection:
-    min_track_age: 5  # Minimum frames tracked before selectable
+    min_track_age: 5 # Minimum frames tracked before selectable
 
   # Recovery Settings
   recovery:
-    search_radius: 150  # Pixels to search for lost object
-    size_similarity_threshold: 0.5  # 0.0-1.0 for object matching
-    timeout: 3.0  # Seconds before giving up
+    search_radius: 150 # Pixels to search for lost object
+    size_similarity_threshold: 0.5 # 0.0-1.0 for object matching
+    timeout: 3.0 # Seconds before giving up
 
 # PTZ Control
 ptz_control:
-  pan_sensitivity: 45.0  # Degrees per normalized unit
-  tilt_sensitivity: 30.0  # Degrees per normalized unit
-  max_pan_speed: 2.0  # Degrees per frame
-  max_tilt_speed: 1.5  # Degrees per frame
+  pan_sensitivity: 45.0 # Degrees per normalized unit
+  tilt_sensitivity: 30.0 # Degrees per normalized unit
+  max_pan_speed: 2.0 # Degrees per frame
+  max_tilt_speed: 1.5 # Degrees per frame
   min_zoom: 1.0
   max_zoom: 5.0
-  zoom_speed: 0.05  # Zoom change per frame
-  smoothing_factor: 0.3  # 0.0-1.0, higher = more smoothing
-  target_object_size: 0.3  # Target object size as fraction of frame
+  zoom_speed: 0.05 # Zoom change per frame
+  smoothing_factor: 0.3 # 0.0-1.0, higher = more smoothing
+  target_object_size: 0.3 # Target object size as fraction of frame
 
 # Display
 display:
   show_window: true
   show_info: true
-  show_debug_mosaic: true  # 2×4 grid of pipeline stages
+  show_debug_mosaic: true # 2×4 grid of pipeline stages
 
   debug_mosaic:
     tile_width: 320

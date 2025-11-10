@@ -2,7 +2,7 @@
 
 # Video Input/Output
 video:
-  input_path: "input.mp4"
+  input_path: "UAV_videos/V_DRONE_048.mp4"
   output_path: "output.mp4"
   output_codec: "mp4v" # Options: mp4v, X264, MJPG
   save_output: true
@@ -13,9 +13,9 @@ video:
 background_subtraction:
   algorithm: "MOG2" # Options: MOG2 (recommended), KNN
   history: 500
-  var_threshold: 50 # For MOG2
+  var_threshold: 100 # For MOG2
   dist2_threshold: 400.0 # For KNN
-  detect_shadows: true
+  detect_shadows: False
   learning_rate: -1 # -1 for automatic, or 0.001-0.1
 
 # Foreground Mask Post-Processing (Simplified)
@@ -37,7 +37,7 @@ object_detection:
 
 # Tracking (Simplified)
 tracking:
-  tracker: "CSRT" # KCF (fast, recommended) or CSRT (accurate)
+  tracker: "CSRT" # KCF (fast, recommended) or CSRT (accurate, better for small objects)
 
   # Norfair Multi-Object Tracking (Detection Mode)
   norfair:
@@ -49,23 +49,36 @@ tracking:
   selection:
     min_track_age: 5 # Minimum frames tracked before selectable
 
+  # Bbox Validation (for tracking mode)
+  validation:
+    min_bbox_area: 20 # Minimum bbox area in pixels
+    max_bbox_area_fraction: 0.3 # Maximum area as fraction of frame
+
   # Recovery Settings
   recovery:
     search_radius: 150 # Pixels to search for lost object
     size_similarity_threshold: 0.5 # 0.0-1.0 for object matching
     timeout: 3.0 # Seconds before giving up
 
+  # Optional: reinforce tracker using detection while in TRACKING
+  reinforcement:
+    enabled: true # If true, periodically validate tracker with detection
+    interval: 5 # Run reinforcement every N frames in TRACKING
+    iou_threshold: 0.3 # Minimum IoU with detection to accept correction
+    max_center_distance: 50 # Fallback: max pixels between centers if IoU is low
+    reinitialize: true # Re-create tracker on correction (more robust)
+
 # PTZ Control
 ptz_control:
-  pan_sensitivity: 45.0 # Degrees per normalized unit
-  tilt_sensitivity: 30.0 # Degrees per normalized unit
-  max_pan_speed: 2.0 # Degrees per frame
-  max_tilt_speed: 1.5 # Degrees per frame
+  pan_sensitivity: 5.0 # Degrees per normalized unit (reduced for smoother pan)
+  tilt_sensitivity: 4.0 # Degrees per normalized unit (reduced for smoother tilt)
+  max_pan_speed: 2.0 # Degrees per frame (max speed limiter)
+  max_tilt_speed: 1.5 # Degrees per frame (max speed limiter)
   min_zoom: 1.0
   max_zoom: 5.0
-  zoom_speed: 0.05 # Zoom change per frame
-  smoothing_factor: 0.3 # 0.0-1.0, higher = more smoothing
-  target_object_size: 0.3 # Target object size as fraction of frame
+  zoom_speed: 0.02 # Zoom change per frame (controls max zoom speed)
+  smoothing_factor: 0.20 # 0.0-1.0, higher = more smoothing (0.20 for very smooth movement)
+  target_object_size: 0.12 # Target object size as fraction of frame (less aggressive zoom)
 
 # Display
 display:

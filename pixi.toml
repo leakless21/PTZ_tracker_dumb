@@ -16,6 +16,11 @@ pyyaml = ">=5.0, <7"
 opencv-contrib-python = ">=4.12.0.88, <5"
 
 [tasks]
-track = "python main.py"
-track-config = "python main.py --config config.yaml"
+check = "python run.py --input UAV_videos/V_DRONE_045.mp4"
+track = "python run.py"
+track-config = "python run.py --config config.yaml"
 version = "python --version && python -c \"import cv2, numpy; print(f'OpenCV: {cv2.__version__}'); print(f'NumPy: {numpy.__version__}')\""
+test = "pytest tests/ -v"
+
+[tool.pixi.environments]
+default = { python-version = "3.13", solver-group = "default" }

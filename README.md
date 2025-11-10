@@ -44,7 +44,7 @@ Install Pixi (modern package manager):
 
 Install Pixi (modern package manager):
 
-```bash
+````bash
 
 # Linux/macOS```bash
 
@@ -58,13 +58,13 @@ iwr -useb https://pixi.sh/install.ps1 | iex# Windows (PowerShell)
 
 ```iwr -useb https://pixi.sh/install.ps1 | iex
 
-```
+````
 
 ### Installation
 
 ### Installation
 
-```bash
+````bash
 
 # Clone repository```bash
 
@@ -80,13 +80,13 @@ pixi install# Install dependencies with Pixi
 
 ```pixi install
 
-```
+````
 
 ### Running the Application
 
 That's it! Pixi handles all dependencies automatically.
 
-```bash
+````bash
 
 # Run with default settings### Running the Application
 
@@ -108,7 +108,7 @@ python main.py
 
 ```# Run with specific video files
 
-pixi run python main.py --input video.mp4 --output result.mp4
+pixi run python run.py --input video.mp4 --output result.mp4
 
 ### Verify Installation
 
@@ -118,13 +118,13 @@ pixi run python main.py --input video.mp4 --output result.mp4
 
 pixi run version```
 
-```
+````
 
 ### Logging
 
 Expected output:
 
-```- Uses Loguru for logging by default.
+````- Uses Loguru for logging by default.
 
 Python 3.13.x- Outputs to colorized console and a rotating file at `logs/ptz_tracker.log` (10 MB, keep 5 files).
 
@@ -140,21 +140,31 @@ NumPy: 2.x.x
 
 pixi run version
 
-**~750 lines across 4 modules + configuration**```
+**~750 lines across modular package structure**
 
 
 
-| Module | Lines | Purpose |Expected output:
+| Package/Module | Lines | Purpose |
 
-|--------|-------|---------|```
+|----------------|-------|---------|
 
-| **main.py** | ~250 | Video I/O, main loop, state machine, keyboard input |Python 3.x.x
+| **ptz_tracker/main.py** | ~540 | Main application orchestration and processing loop |
 
-| **tracker.py** | ~300 | Background subtraction, Norfair & CSRT/KCF tracking |OpenCV: 4.x.x
+| **ptz_tracker/core/tracker.py** | ~608 | Background subtraction, Norfair & CSRT/KCF tracking |
 
-| **ptz.py** | ~100 | PTZ calculations and ROI extraction |NumPy: 1.x.x
+| **ptz_tracker/core/ptz.py** | ~264 | PTZ control calculations and ROI extraction |
 
-| **debug_view.py** | ~100 | Debug mosaic visualization (2×4 grid) |```
+| **ptz_tracker/io/video_io.py** | ~108 | Video capture and output operations |
+
+| **ptz_tracker/io/config_manager.py** | ~128 | Configuration loading and validation |
+
+| **ptz_tracker/ui/app_state.py** | ~98 | Application state management |
+
+| **ptz_tracker/ui/input_handler.py** | ~105 | Keyboard input processing |
+
+| **ptz_tracker/ui/debug_view.py** | ~249 | Debug mosaic visualization (2×4 grid) |
+
+| **run.py** | ~12 | Entry point script |
 
 | **config.yaml** | ~50 | Configuration parameters |
 
@@ -164,49 +174,49 @@ pixi run version
 
 Edit `config.yaml` to customize:
 
-```
+````
 
         ┌──────────────┐- Background subtraction algorithm (OpenCV or BGSLibrary)
 
-   ┌───▶│  DETECTION   │◀────────┐- Object detection parameters
+┌───▶│ DETECTION │◀────────┐- Object detection parameters
 
-   │    │ (Multi-obj)  │         │- PTZ control sensitivity
+│ │ (Multi-obj) │ │- PTZ control sensitivity
 
-   │    └──────┬───────┘         │- Display options
+│ └──────┬───────┘ │- Display options
 
-   │           │                 │
+│ │ │
 
-   │    Press 0-9                │See `TECHNICAL_SPECIFICATIONS.md` for detailed parameter descriptions.
+│ Press 0-9 │See `TECHNICAL_SPECIFICATIONS.md` for detailed parameter descriptions.
 
-   │           │                 │
+│ │ │
 
-   │           ▼                 │## Project Structure
+│ ▼ │## Project Structure
 
-   │    ┌──────────────┐         │
+│ ┌──────────────┐ │
 
-   │    │   TRACKING   │         │```
+│ │ TRACKING │ │```
 
-   │    │ (Single-obj) │         │PTZ_tracker_dumb/
+│ │ (Single-obj) │ │PTZ_tracker_dumb/
 
-   │    └──────┬───────┘         │├── pyproject.toml          # Pixi configuration (recommended)
+│ └──────┬───────┘ │├── pyproject.toml # Pixi configuration (recommended)
 
-   │           │                 │├── pixi.toml              # Alternative minimal config
+│ │ │├── pixi.toml # Alternative minimal config
 
-   │    Tracker fails            │ Timeout├── config.yaml            # Application configuration
+│ Tracker fails │ Timeout├── config.yaml # Application configuration
 
-   │           │                 │ or press R├── main.py                # Main application (to be implemented)
+│ │ │ or press R├── main.py # Main application (to be implemented)
 
-   │           ▼                 │├── TECHNICAL_SPECIFICATIONS.md  # Complete technical specs
+│ ▼ │├── TECHNICAL_SPECIFICATIONS.md # Complete technical specs
 
-   │    ┌──────────────┐         │├── README.md              # This file
+│ ┌──────────────┐ │├── README.md # This file
 
-   └────│     LOST     │─────────┘└── .gitignore             # Git ignore rules
+└────│ LOST │─────────┘└── .gitignore # Git ignore rules
 
         │  (Recovery)  │```
 
         └──────────────┘
 
-```## Development
+````## Development
 
 
 
@@ -242,7 +252,7 @@ Edit `config.yaml` to customize:
 
 ## Keyboard Controls# Run application
 
-python main.py
+python run.py
 
 | Key | Action |
 
@@ -262,7 +272,7 @@ python main.py
 
 ## Configurationexit
 
-```
+````
 
 Edit `config.yaml` to customize:
 
@@ -282,41 +292,55 @@ Edit `config.yaml` to customize:
 
 See `TECHNICAL_SPECIFICATIONS.md` for detailed parameter descriptions.pixi add --pypi scikit-image
 
+## Project Structure
 
-
-## Project Structure# Add Loguru (logging)
-
-pixi add loguru  # or: pixi add --pypi loguru
-
+```text
+PTZ_tracker_dumb/
+├── src/                                    # Source code directory
+│   └── ptz_tracker/                        # Main package
+│       ├── __init__.py                    # Package initialization
+│       ├── main.py                        # Main application orchestration (~540 lines)
+│       ├── core/                          # Core tracking and PTZ logic
+│       │   ├── __init__.py
+│       │   ├── tracker.py                 # Background subtraction & tracking (~608 lines)
+│       │   └── ptz.py                     # PTZ control calculations (~264 lines)
+│       ├── io/                            # Input/Output operations
+│       │   ├── __init__.py
+│       │   ├── video_io.py                # Video capture and output (~108 lines)
+│       │   └── config_manager.py          # Configuration loading (~128 lines)
+│       └── ui/                            # User interface components
+│           ├── __init__.py
+│           ├── app_state.py               # Application state management (~98 lines)
+│           ├── input_handler.py           # Keyboard input processing (~105 lines)
+│           └── debug_view.py              # Debug mosaic visualization (~249 lines)
+├── tests/                                  # Test suite
+│   ├── __init__.py
+│   ├── unit/                              # Unit tests
+│   │   └── __init__.py
+│   └── integration/                       # Integration tests
+│       └── __init__.py
+├── docs/                                   # Documentation
+│   ├── robust_motion_detection_plan.md    # Motion detection strategy
+├── run.py                                  # Entry point script
+├── config.yaml                             # Configuration parameters
+├── pyproject.toml                          # Python package configuration
+├── pixi.toml                               # Pixi environment config
+├── PROJECT_STRUCTURE.md                    # This structure document
+├── TECHNICAL_SPECIFICATIONS.md             # Complete technical docs
+├── PROJECT_PLAN.md                         # Implementation timeline
+├── AGENTS.md                               # Engineering guidelines
+├── README.md                               # This file
+├── .gitignore                              # Git ignore rules
+└── UAV_videos/                             # Test video files (not committed)
 ```
 
-PTZ_tracker_dumb/# Remove a package
+## Environment Options
 
-├── main.py                        # Main application looppixi remove scipy
+├── README.md # This file
 
-├── tracker.py                     # Background subtraction & tracking
+└── UAV_videos/ # Test video filesPixi supports multiple environments:
 
-├── ptz.py                         # PTZ control calculations# Update all packages
-
-├── debug_view.py                  # Debug mosaic visualizationpixi update
-
-├── config.yaml                    # Configuration parameters
-
-├── requirements.txt               # Python dependencies# List installed packages
-
-├── pixi.toml                      # Pixi environment configpixi list
-
-├── TECHNICAL_SPECIFICATIONS.md    # Complete technical docs```
-
-├── PROJECT_PLAN.md                # Implementation roadmap
-
-├── AGENTS.md                      # Engineering guidelines## Environment Options
-
-├── README.md                      # This file
-
-└── UAV_videos/                    # Test video filesPixi supports multiple environments:
-
-```
+````
 
 - **default**: Core dependencies (opencv, numpy, pybgs)
 
@@ -338,7 +362,7 @@ PTZ_tracker_dumb/# Remove a package
 
 ## Dependenciespixi install --environment dev
 
-```
+````
 
 - **opencv-python** ≥4.5: Video I/O, image processing, tracking
 
@@ -350,7 +374,7 @@ PTZ_tracker_dumb/# Remove a package
 
 - **loguru** ≥0.7: Logging (console + rotating file)
 
-```bash
+````bash
 
 ## Installation Methods# Create virtual environment
 
@@ -366,13 +390,15 @@ pixi install# Install dependencies
 
 pixi run trackpip install opencv-python numpy pybgs pyyaml loguru
 
-```
+````
 
 # Run application
 
-### With pippython main.py
+### With pip
 
-```
+python run.py
+
+````
 
 ```bash
 
@@ -382,7 +408,7 @@ source venv/bin/activate
 
 pip install -r requirements.txt- **TECHNICAL_SPECIFICATIONS.md**: Complete implementation guide
 
-python main.py  - Detailed OpenCV/BGSLibrary API specifications
+python run.py  - Detailed OpenCV/BGSLibrary API specifications
 
 ```  - Algorithm descriptions and parameters
 
@@ -396,20 +422,21 @@ Press **D** to toggle during runtime:
 
 ## License
 
-```
+````
 
 ┌─────────────┬─────────────┬─────────────┬─────────────┐MIT License
 
-│ 1. Original │ 2. FG Mask  │ 3. Cleaned  │ 4. Contours │
+│ 1. Original │ 2. FG Mask │ 3. Cleaned │ 4. Contours │
 
-│             │    (Raw)    │    Mask     │             │## Contributing
+│ │ (Raw) │ Mask │ │## Contributing
 
 ├─────────────┼─────────────┼─────────────┼─────────────┤
 
-│ 5. Norfair  │ 6. CSRT     │ 7. PTZ ROI  │ 8. Final    │See `TECHNICAL_SPECIFICATIONS.md` for implementation details and coding guidelines.
+│ 5. Norfair │ 6. CSRT │ 7. PTZ ROI │ 8. Final │See `TECHNICAL_SPECIFICATIONS.md` for implementation details and coding guidelines.
 
-│  Detection  │  Tracking   │   Overlay   │   Output    │
+│ Detection │ Tracking │ Overlay │ Output │
 └─────────────┴─────────────┴─────────────┴─────────────┘
+
 ```
 
 ## Logging
@@ -424,16 +451,16 @@ No configuration required; sensible defaults work out-of-box.
 
 ## Success Criteria
 
-✅ Loads and processes video files  
-✅ Detects multiple moving objects  
-✅ Assigns persistent IDs to objects  
-✅ User can select objects by ID (0-9)  
-✅ Tracks selected object with CSRT/KCF  
-✅ Virtual PTZ keeps object centered  
-✅ Debug mosaic shows pipeline stages  
-✅ Recovers from tracking loss  
-✅ Achieves target frame rates  
-✅ Clean, maintainable codebase  
+✅ Loads and processes video files
+✅ Detects multiple moving objects
+✅ Assigns persistent IDs to objects
+✅ User can select objects by ID (0-9)
+✅ Tracks selected object with CSRT/KCF
+✅ Virtual PTZ keeps object centered
+✅ Debug mosaic shows pipeline stages
+✅ Recovers from tracking loss
+✅ Achieves target frame rates
+✅ Clean, maintainable codebase
 
 ## Documentation
 
@@ -456,3 +483,4 @@ MIT License
 ## Contributing
 
 Follow guidelines in `AGENTS.md` for coding standards, architecture principles, and contribution workflow.
+```

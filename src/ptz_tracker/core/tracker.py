@@ -15,9 +15,10 @@ from enum import Enum
 
 class State(Enum):
     """Tracking state machine."""
-    DETECTION = 0   # Multi-object mode (Norfair)
-    TRACKING = 1    # Single-object mode (CSRT/KCF)
-    LOST = 2        # Recovery mode
+
+    DETECTION = 0  # Multi-object mode (Norfair)
+    TRACKING = 1  # Single-object mode (CSRT/KCF)
+    LOST = 2  # Recovery mode
 
 
 class ObjectTracker:
@@ -35,20 +36,20 @@ class ObjectTracker:
         self.state = State.DETECTION
 
         # Background subtraction setup
-        bg_config = config['background_subtraction']
-        algorithm = bg_config['algorithm']
+        bg_config = config["background_subtraction"]
+        algorithm = bg_config["algorithm"]
 
-        if algorithm == 'MOG2':
+        if algorithm == "MOG2":
             self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
-                history=bg_config['history'],
-                varThreshold=bg_config['var_threshold'],
-                detectShadows=bg_config['detect_shadows']
+                history=bg_config["history"],
+                varThreshold=bg_config["var_threshold"],
+                detectShadows=bg_config["detect_shadows"],
             )
-        elif algorithm == 'KNN':
+        elif algorithm == "KNN":
             self.bg_subtractor = cv2.createBackgroundSubtractorKNN(
-                history=bg_config['history'],
-                dist2Threshold=bg_config['dist2_threshold'],
-                detectShadows=bg_config['detect_shadows']
+                history=bg_config["history"],
+                dist2Threshold=bg_config["dist2_threshold"],
+                detectShadows=bg_config["detect_shadows"],
             )
         else:
             raise ValueError(f"Unknown background subtraction algorithm: {algorithm}")
@@ -56,21 +57,23 @@ class ObjectTracker:
         logger.info("Initialized background subtractor: {algo}", algo=algorithm)
 
         # Morphological kernel setup
-        kernel_size = config['mask_processing']['kernel_size']
-        self.kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+        kernel_size = config["mask_processing"]["kernel_size"]
+        self.kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (kernel_size, kernel_size)
+        )
 
         # Norfair tracker for multi-object detection
-        norfair_cfg = config['tracking']['norfair']
+        norfair_cfg = config["tracking"]["norfair"]
         self.norfair_tracker = Tracker(
             distance_function="mean_euclidean",
-            distance_threshold=norfair_cfg['distance_threshold'],
-            hit_counter_max=norfair_cfg['hit_counter_max'],
-            initialization_delay=norfair_cfg['initialization_delay']
+            distance_threshold=norfair_cfg["distance_threshold"],
+            hit_counter_max=norfair_cfg["hit_counter_max"],
+            initialization_delay=norfair_cfg["initialization_delay"],
         )
 
         # Single-object tracker (CSRT/KCF)
         self.single_tracker = None
-        self.tracker_type = config['tracking']['tracker']
+        self.tracker_type = config["tracking"]["tracker"]
         logger.info("Using {tracker} tracker", tracker=self.tracker_type)
 
         # Tracking state
@@ -78,6 +81,7 @@ class ObjectTracker:
         self.tracked_object_id = None
         self.loss_timestamp = 0.0
         self.tracked_objects = []
+        # Internal counter for optional reinforcement cadence can be managed by caller
 
     def update_background_subtraction(self, frame: np.ndarray) -> np.ndarray:
         """Apply background subtraction to frame.
@@ -107,7 +111,7 @@ class ObjectTracker:
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self.kernel, iterations=1)
 
         # Binary threshold
-        threshold_value = self.config['mask_processing']['threshold_value']
+        threshold_value = self.config["mask_processing"]["threshold_value"]
         _, mask = cv2.threshold(mask, threshold_value, 255, cv2.THRESH_BINARY)
 
         return mask
@@ -126,11 +130,11 @@ class ObjectTracker:
         frame_shape = self.frame_shape
         frame_area = frame_shape[0] * frame_shape[1]
 
-        cfg = self.config['object_detection']
-        min_area = cfg['min_area']
-        max_area = frame_area * cfg['max_area_fraction']
-        min_aspect = cfg.get('min_aspect_ratio', 0.0)
-        max_aspect = cfg.get('max_aspect_ratio', float('inf'))
+        cfg = self.config["object_detection"]
+        min_area = cfg["min_area"]
+        max_area = frame_area * cfg["max_area_fraction"]
+        min_aspect = cfg.get("min_aspect_ratio", 0.0)
+        max_aspect = cfg.get("max_aspect_ratio", float("inf"))
 
         valid_contours = []
         valid_indices = set()
@@ -154,11 +158,17 @@ class ObjectTracker:
             valid_contours.append(contour)
             valid_indices.add(i)
 
-        logger.debug("Detected {total} contours, {valid} valid", total=len(contours), valid=len(valid_contours))
+        logger.debug(
+            "Detected {total} contours, {valid} valid",
+            total=len(contours),
+            valid=len(valid_contours),
+        )
 
         return valid_contours, valid_indices
 
-    def update_detection_mode(self, frame: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def update_detection_mode(
+        self, frame: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Update detection mode (multi-object tracking with Norfair).
 
         Args:
@@ -180,9 +190,10 @@ class ObjectTracker:
             x, y, w, h = cv2.boundingRect(contour)
             cx = x + w / 2
             cy = y + h / 2
+            # Convert numpy int64 to Python int for OpenCV compatibility
+            bbox_tuple = (int(x), int(y), int(w), int(h))
             detection = Detection(
-                points=np.array([[cx, cy]]),
-                data={'bbox': (x, y, w, h)}
+                points=np.array([[cx, cy]]), data={"bbox": bbox_tuple}
             )
             detections.append(detection)
 
@@ -191,13 +202,13 @@ class ObjectTracker:
 
         # Draw detection visualization
         output_frame = frame.copy()
-        min_track_age = self.config['tracking']['selection']['min_track_age']
+        min_track_age = self.config["tracking"]["selection"]["min_track_age"]
 
         for obj in self.tracked_objects:
             if obj.last_detection is None:
                 continue
 
-            bbox = obj.last_detection.data['bbox']
+            bbox = obj.last_detection.data["bbox"]
             x, y, w, h = bbox
 
             # Only show objects that are old enough to select
@@ -206,10 +217,19 @@ class ObjectTracker:
                 cv2.rectangle(output_frame, (x, y), (x + w, y + h), (255, 255, 0), 2)
 
                 # ID label
-                cv2.putText(output_frame, f"ID: {obj.id}", (x, y - 10),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+                cv2.putText(
+                    output_frame,
+                    f"ID: {obj.id}",
+                    (x, y - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (255, 255, 0),
+                    2,
+                )
 
-        logger.debug("Detection mode: {count} objects tracked", count=len(self.tracked_objects))
+        logger.debug(
+            "Detection mode: {count} objects tracked", count=len(self.tracked_objects)
+        )
 
         return output_frame, cleaned_mask, fg_mask
 
@@ -217,14 +237,17 @@ class ObjectTracker:
         """Lock tracking onto specific object ID.
 
         Args:
-            object_id: Target object ID (0-9)
+            object_id: Target object ID (any non-negative integer)
 
         Returns:
             Bounding box (x, y, w, h) if found, None otherwise
         """
         for obj in self.tracked_objects:
-            if obj.id == object_id and obj.age >= self.config['tracking']['selection']['min_track_age']:
-                bbox = obj.last_detection.data['bbox']
+            if (
+                obj.id == object_id
+                and obj.age >= self.config["tracking"]["selection"]["min_track_age"]
+            ):
+                bbox = obj.last_detection.data["bbox"]
                 self.tracked_object_id = object_id
                 logger.info("Locked onto object ID: {id}", id=object_id)
                 return bbox
@@ -260,7 +283,9 @@ class ObjectTracker:
         logger.error("Unknown tracker type: {type}", type=self.tracker_type)
         return None
 
-    def initialize_single_tracker(self, frame: np.ndarray, bbox: Tuple[int, int, int, int]) -> bool:
+    def initialize_single_tracker(
+        self, frame: np.ndarray, bbox: Tuple[int, int, int, int]
+    ) -> bool:
         """Initialize single-object tracker.
 
         Args:
@@ -281,30 +306,54 @@ class ObjectTracker:
             logger.error("Failed to create tracker instance; TRACKING will not start")
             return False
 
-        # Normalize bbox to float tuple for OpenCV (x, y, w, h)
+        # Normalize bbox to pure Python int tuple for OpenCV (x, y, w, h)
+        # OpenCV requires pure Python numeric types, not numpy types
         try:
             x, y, w, h = bbox
-            bbox_float = (float(x), float(y), float(w), float(h))
+            # Convert explicitly to Python int to avoid numpy dtype issues
+            bbox_int = (int(x), int(y), int(w), int(h))
+            # Ensure all components are reasonable
+            if any(v <= 0 for v in bbox_int[2:]):  # width and height must be positive
+                logger.error(
+                    "Invalid bbox dimensions (w,h must be positive): {bbox}",
+                    bbox=bbox_int,
+                )
+                return False
+
+            # Additional validation: ensure bbox is within frame bounds
+            frame_h, frame_w = frame.shape[:2]
+            x, y, w, h = bbox_int
+            if x < 0 or y < 0 or x + w > frame_w or y + h > frame_h:
+                logger.error(
+                    "Bbox out of frame bounds: bbox={bbox}, frame=({fw}x{fh})",
+                    bbox=bbox_int,
+                    fw=frame_w,
+                    fh=frame_h,
+                )
+                return False
+
         except Exception as e:
             logger.error("Invalid bbox format for tracker initialization: {err}", err=e)
             return False
 
         try:
-            success = tracker.init(frame, bbox_float)
+            tracker.init(frame, bbox_int)
+            # Note: tracker.init() returns None on success (not a bool!)
+            # If it raises an exception above, we catch it. Otherwise assume success.
         except Exception as e:
             logger.error("Tracker.init threw exception: {err}", err=e)
             return False
 
-        if success:
-            self.single_tracker = tracker
-            self.last_bbox = (int(x), int(y), int(w), int(h))
-            logger.info("Initialized {tracker} tracker successfully", tracker=self.tracker_type)
-            return True
+        self.single_tracker = tracker
+        self.last_bbox = bbox_int
+        logger.info(
+            "Initialized {tracker} tracker successfully", tracker=self.tracker_type
+        )
+        return True
 
-        logger.error("Tracker initialization failed (init() returned False)")
-        return False
-
-    def update_tracking_mode(self, frame: np.ndarray) -> Tuple[bool, Optional[Tuple[int, int, int, int]]]:
+    def update_tracking_mode(
+        self, frame: np.ndarray
+    ) -> Tuple[bool, Optional[Tuple[int, int, int, int]]]:
         """Update single-object tracking mode.
 
         Args:
@@ -319,14 +368,21 @@ class ObjectTracker:
         success, bbox = self.single_tracker.update(frame)
 
         if success and self._is_valid_bbox(bbox, frame.shape):
-            bbox_int: Tuple[int, int, int, int] = (int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]))
+            bbox_int: Tuple[int, int, int, int] = (
+                int(bbox[0]),
+                int(bbox[1]),
+                int(bbox[2]),
+                int(bbox[3]),
+            )
             self.last_bbox = bbox_int
             return True, bbox_int
         else:
             logger.warning("Tracking failed or invalid bbox")
             return False, None
 
-    def _is_valid_bbox(self, bbox: Tuple[float, float, float, float], frame_shape: Tuple[int, int]) -> bool:
+    def _is_valid_bbox(
+        self, bbox: Tuple[float, float, float, float], frame_shape: Tuple[int, int]
+    ) -> bool:
         """Validate bounding box.
 
         Args:
@@ -345,15 +401,21 @@ class ObjectTracker:
 
         # Check reasonable size
         area = w * h
-        min_area = self.config['tracking']['validation']['min_bbox_area']
-        max_area = height * width * self.config['tracking']['validation']['max_bbox_area_fraction']
+        min_area = self.config["tracking"]["validation"]["min_bbox_area"]
+        max_area = (
+            height
+            * width
+            * self.config["tracking"]["validation"]["max_bbox_area_fraction"]
+        )
 
         if area < min_area or area > max_area:
             return False
 
         return True
 
-    def attempt_redetection(self, frame: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
+    def attempt_redetection(
+        self, frame: np.ndarray
+    ) -> Optional[Tuple[int, int, int, int]]:
         """Attempt to redetect lost object.
 
         Args:
@@ -380,12 +442,12 @@ class ObjectTracker:
         last_cy = last_y + last_h / 2
         last_area = last_w * last_h
 
-        cfg = self.config['tracking']['recovery']
-        search_radius = cfg['search_radius']
-        size_threshold = cfg['size_similarity_threshold']
+        cfg = self.config["tracking"]["recovery"]
+        search_radius = cfg["search_radius"]
+        size_threshold = cfg["size_similarity_threshold"]
 
         best_match = None
-        best_distance = float('inf')
+        best_distance = float("inf")
 
         for contour in valid_contours:
             area = cv2.contourArea(contour)
@@ -399,7 +461,11 @@ class ObjectTracker:
                 continue
 
             # Size similarity check
-            size_ratio = min(area, last_area) / max(area, last_area) if max(area, last_area) > 0 else 0
+            size_ratio = (
+                min(area, last_area) / max(area, last_area)
+                if max(area, last_area) > 0
+                else 0
+            )
             if size_ratio < size_threshold:
                 continue
 
@@ -412,6 +478,124 @@ class ObjectTracker:
             logger.info("Redetected object at distance {dist:.1f}", dist=best_distance)
 
         return best_match
+
+    # --- Detection-assisted reinforcement helpers ---
+    def _bbox_iou(
+        self, a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]
+    ) -> float:
+        """Compute IoU between two bboxes (x, y, w, h)."""
+        ax, ay, aw, ah = a
+        bx, by, bw, bh = b
+        a_x2, a_y2 = ax + aw, ay + ah
+        b_x2, b_y2 = bx + bw, by + bh
+
+        inter_x1 = max(ax, bx)
+        inter_y1 = max(ay, by)
+        inter_x2 = min(a_x2, b_x2)
+        inter_y2 = min(a_y2, b_y2)
+
+        inter_w = max(0, inter_x2 - inter_x1)
+        inter_h = max(0, inter_y2 - inter_y1)
+        inter_area = inter_w * inter_h
+
+        area_a = max(0, aw) * max(0, ah)
+        area_b = max(0, bw) * max(0, bh)
+        denom = area_a + area_b - inter_area + 1e-6
+        return float(inter_area / denom) if denom > 0 else 0.0
+
+    def _bbox_center(self, b: Tuple[int, int, int, int]) -> Tuple[float, float]:
+        x, y, w, h = b
+        return (x + w / 2.0, y + h / 2.0)
+
+    def _euclidean_distance(self, p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
+        return float(np.hypot(p1[0] - p2[0], p1[1] - p2[1]))
+
+    def reinforce_with_detection(
+        self, frame: np.ndarray, tracked_bbox: Tuple[int, int, int, int]
+    ) -> Optional[Tuple[int, int, int, int]]:
+        """Use current detection to reinforce or correct the tracker bbox.
+
+        Runs background subtraction and contour detection on the given frame,
+        selects the best matching detection by IoU (or nearest center with
+        size similarity as fallback), and returns a corrected bbox if it
+        passes configured gates.
+
+        Args:
+            frame: Current frame (typically the PTZ ROI frame)
+            tracked_bbox: Bbox from the tracker (x, y, w, h)
+
+        Returns:
+            New bbox to use if accepted, otherwise None.
+        """
+        # Validate incoming bbox
+        if not self._is_valid_bbox(tracked_bbox, frame.shape):
+            return None
+
+        # Config
+        reinf_cfg = self.config["tracking"].get("reinforcement", {})
+        iou_thresh = float(reinf_cfg.get("iou_threshold", 0.3))
+        max_center_dist = float(reinf_cfg.get("max_center_distance", 50))
+        size_sim_thresh = float(
+            self.config["tracking"]["recovery"].get("size_similarity_threshold", 0.5)
+        )
+
+        # Perform detection on this frame
+        fg_mask = self.update_background_subtraction(frame)
+        cleaned_mask = self.clean_mask(fg_mask)
+        valid_contours, _ = self.detect_contours(cleaned_mask)
+        if not valid_contours:
+            return None
+
+        # Find best IoU candidate
+        best_iou = -1.0
+        best_iou_bbox: Optional[Tuple[int, int, int, int]] = None
+        for contour in valid_contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            cand_bbox = (int(x), int(y), int(w), int(h))
+            iou = self._bbox_iou(tracked_bbox, cand_bbox)
+            if iou > best_iou:
+                best_iou = iou
+                best_iou_bbox = cand_bbox
+
+        if best_iou_bbox is not None and best_iou >= iou_thresh:
+            logger.debug(
+                "Reinforcement accepted by IoU: {iou:.2f} >= {thr}",
+                iou=best_iou,
+                thr=iou_thresh,
+            )
+            return best_iou_bbox
+
+        # Fallback: nearest center with size similarity gate
+        tracked_center = self._bbox_center(tracked_bbox)
+        tracked_area = max(1, tracked_bbox[2] * tracked_bbox[3])
+
+        best_dist = float("inf")
+        best_dist_bbox: Optional[Tuple[int, int, int, int]] = None
+        for contour in valid_contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            cand_bbox = (int(x), int(y), int(w), int(h))
+            cand_center = self._bbox_center(cand_bbox)
+            dist = self._euclidean_distance(tracked_center, cand_center)
+            if dist > max_center_dist:
+                continue
+            # Size similarity check
+            cand_area = max(1, w * h)
+            size_ratio = min(cand_area, tracked_area) / max(cand_area, tracked_area)
+            if size_ratio < size_sim_thresh:
+                continue
+            if dist < best_dist:
+                best_dist = dist
+                best_dist_bbox = cand_bbox
+
+        if best_dist_bbox is not None:
+            logger.debug(
+                "Reinforcement accepted by distance: {dist:.1f} <= {maxd}",
+                dist=best_dist,
+                maxd=max_center_dist,
+            )
+            return best_dist_bbox
+
+        return None
 
     def reset_to_detection_mode(self):
         """Reset to detection mode."""

@@ -29,21 +29,33 @@ class DebugMosaic:
             h=self.tile_height,
         )
 
-    def create_mosaic(self, stages: Dict[str, np.ndarray]) -> np.ndarray:
-        """Create a 2x4 grid mosaic from pipeline stages.
+    def create_mosaic(
+        self, stages: Dict[str, np.ndarray], info: Optional[Dict[str, Any]] = None
+    ) -> np.ndarray:
+        """Create a 3x3 grid mosaic from pipeline stages with detailed labels.
 
         Args:
             stages: Dictionary with stage names as keys and frames as values.
-                   Expected keys (some optional): fg_mask, fg_mask_clean, contours,
-                   detection, tracking, ptz_roi, final
+                   Expected keys (some optional): original, frame_diff_raw, fg_mask,
+                   fg_mask_clean, contours, detection, tracking, ptz_roi, final
+            info: Optional dictionary with program state info:
+                  - state: Current tracking state (DETECTION/TRACKING/LOST)
+                  - tracker_type: Tracker type (CSRT/KCF)
+                  - selected_id: Selected object ID
+                  - detection_method: Detection method (background_subtraction/frame_difference)
+                  - fps: Current FPS
 
         Returns:
-            Mosaic frame of all stages in 2x4 grid (480x1280 for 240x320 tiles)
+            Mosaic frame of all stages in 3x3 grid (720x960 for 240x320 tiles)
         """
-        # Define layout: 2 rows × 4 columns
+        if info is None:
+            info = {}
+
+        # Define layout: 3 rows × 3 columns
         layout = [
-            ["fg_mask", "fg_mask_clean", "contours", "detection"],
-            ["tracking", "ptz_roi", "final", "final"],  # final repeated for symmetry
+            ["original", "frame_diff_raw", "fg_mask"],
+            ["fg_mask_clean", "contours", "detection"],
+            ["tracking", "ptz_roi", "final"],
         ]
 
         rows = []
@@ -65,16 +77,37 @@ class DebugMosaic:
                 # Resize to tile size
                 resized = cv2.resize(frame, (self.tile_width, self.tile_height))
 
-                # Add label
+                # Add detailed label with background
                 label = stage_name
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.5
+                font_color = (0, 255, 0)
+                text_thickness = 1
+
+                # Get text size for background
+                text_size = cv2.getTextSize(label, font, font_scale, text_thickness)[0]
+                text_width = text_size[0]
+                text_height = text_size[1]
+                padding = 4
+
+                # Draw semi-transparent background for label
+                cv2.rectangle(
+                    resized,
+                    (2, 2),
+                    (2 + text_width + 2 * padding, 2 + text_height + 2 * padding),
+                    (0, 0, 0),
+                    -1,
+                )
+
+                # Draw label text
                 cv2.putText(
                     resized,
                     label,
-                    (5, 20),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (0, 255, 0),
-                    1,
+                    (2 + padding, 2 + text_height + padding),
+                    font,
+                    font_scale,
+                    font_color,
+                    text_thickness,
                 )
 
                 row_frames.append(resized)
@@ -85,7 +118,56 @@ class DebugMosaic:
 
         # Concatenate vertically
         mosaic = np.vstack(rows)
-        return mosaic
+
+        # Add header with program state information
+        header_height = 60
+        header = np.zeros((header_height, mosaic.shape[1], 3), dtype=np.uint8)
+
+        # Build state info text
+        state = info.get("state", "UNKNOWN")
+        tracker_type = info.get("tracker_type", "UNKNOWN")
+        selected_id = info.get("selected_id", None)
+        detection_method = info.get("detection_method", "background_subtraction")
+        fps = info.get("fps", 0.0)
+
+        # Line 1: State, Tracker, ID
+        line1 = f"State: {state} | Tracker: {tracker_type} | ID: {selected_id if selected_id is not None else 'None'}"
+
+        # Line 2: Detection method and FPS
+        line2 = f"Method: {detection_method} | FPS: {fps:.1f}"
+
+        # Draw header background
+        cv2.rectangle(
+            header, (0, 0), (header.shape[1], header_height), (30, 30, 30), -1
+        )
+        cv2.rectangle(
+            header, (0, 0), (header.shape[1], header_height), (100, 100, 100), 1
+        )
+
+        # Draw text
+        cv2.putText(
+            header,
+            line1,
+            (10, 25),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 255),
+            1,
+        )
+        cv2.putText(
+            header,
+            line2,
+            (10, 50),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 200),
+            1,
+        )
+
+        # Combine header and mosaic
+        final_mosaic = np.vstack([header, mosaic])
+
+        return final_mosaic
 
 
 def draw_contours_overlay(

@@ -1,5 +1,3 @@
-// Revised plan with references
-
 # Robust Motion Detection under PTZ Motion — Revised Plan with References
 
 This document refines the earlier plan to make motion detection robust against dynamic backgrounds (trees, clouds, parallax) when the virtual PTZ view moves. It is incremental, OpenCV‑only, and config‑driven. It maps cleanly to the current SRP layout: CV logic in `tracker.py`, PTZ in `ptz.py`, visualization in `debug_view.py`, I/O + state in `main.py`.
@@ -50,12 +48,15 @@ flow_gating:
   enabled: false
   method: "sparse" # sparse (KLT) | farneback
   max_features: 400
-  quality: 0.01
+  quality: 0.01 # goodFeaturesToTrack qualityLevel ~1e-2
   min_distance: 7
   residual_sigma: 2.5 # MAD multiplier for outlier rejection
   min_cluster_area: 30 # px; remove tiny outlier specks
   min_tracks_for_gating: 20
   min_inlier_ratio: 0.5
+  klt_fb_check: true # enable forward-backward consistency check
+  klt_win_size: 21 # KLT window size (tunable)
+  klt_max_level: 2 # KLT pyramid levels (2-3 for real-time)
 
 object_detection:
   # keep existing fields; solidity/extent will be enforced in code
@@ -121,7 +122,7 @@ Rationale: These knobs are compact and stable; defaults are opt-in (`camera_moti
   - Add `_apply_border_mask(mask: np.ndarray, margin: int) -> np.ndarray` that zeros a `margin`‑pixel border.
   - Use `margin = detection.border_margin` (fallback to `camera_motion.border_mask`).
   - Apply before every contour search: detection, reinforcement, redetection.
-- Rationale: Interpolation and warping leak gradients on borders; masking avoids false motion.
+- Rationale: Interpolation and warping leak gradients on borders; masking avoids false motion. Always apply the border mask after any geometric transform and use a constant border value during warps so residuals near edges are suppressed rather than interpreted as motion.
 - References:
   - Image warping and valid region handling: OpenCV Docs — Geometric Image Transformations.
 
@@ -140,7 +141,7 @@ Rationale: These knobs are compact and stable; defaults are opt-in (`camera_moti
 
 ## Phase 2 — Global Motion Compensation (GMC) during PTZ motion
 
-We compensate camera motion by aligning the previous grayscale frame to the current grayscale frame using ECC at reduced resolution, warping the previous frame, computing an absolute-difference residual mask in the valid overlap region, and intersecting this residual mask with the cleaned BS mask to retain only motion inconsistent with the estimated camera motion.
+We compensate camera motion by aligning the previous grayscale frame to the current grayscale frame using ECC at reduced resolution, warping the previous frame, computing an absolute-difference residual mask in the valid overlap region, and intersecting this residual mask with the cleaned BS mask to retain only motion inconsistent with the estimated camera motion. This matches standard moving-camera practice: global alignment + compensated differencing + background-model gating.
 
 ### Implementation details
 
@@ -186,9 +187,11 @@ We suppress motion consistent with the camera by removing inliers to the dominan
 
 ### Sparse KLT method (default)
 
-- Detect corners via `cv2.goodFeaturesToTrack` (Shi‑Tomasi) on `prev_gray`.
-- Track with `cv2.calcOpticalFlowPyrLK(prev_gray, curr_gray, pts_prev)` [Lucas & Kanade 1981].
-- Compute flow vectors `(u, v)` from good pairs; estimate robust medians `(u_med, v_med)`.
+- Detect corners via `cv2.goodFeaturesToTrack` (Shi‑Tomasi) on `prev_gray` using `qualityLevel ≈ flow_gating.quality` and `minDistance = flow_gating.min_distance`.
+- Track with `cv2.calcOpticalFlowPyrLK(prev_gray, curr_gray, pts_prev, winSize=(klt_win_size, klt_win_size), maxLevel=klt_max_level)` [Lucas & Kanade 1981].
+- Optionally apply forward–backward consistency when `flow_gating.klt_fb_check` is true:
+  - Track points forward (prev→curr) and backward (curr→prev); discard pairs with FB error above a small threshold.
+- Compute flow vectors `(u, v)` from remaining good pairs; estimate robust medians `(u_med, v_med)`.
 - Require at least `flow_gating.min_tracks_for_gating` valid tracks before applying gating; otherwise, skip flow gating for this frame.
 - Residual per point: `r = hypot(u - u_med, v - v_med)`; compute MAD of `r` and threshold outliers with `r > residual_sigma * MAD(r)`, using MAD as a robust scale estimate.
 - If fewer than `flow_gating.min_inlier_ratio` of points support the dominant flow, treat the global flow estimate as unreliable and skip flow gating for that frame.
@@ -196,7 +199,7 @@ We suppress motion consistent with the camera by removing inliers to the dominan
 
 ### Dense Farnebäck (optional)
 
-- If `flow_gating.method: farneback`, compute dense flow via `cv2.calcOpticalFlowFarneback` [Farnebäck 2003] on downscaled grayscale frames, subtract the median flow vector, threshold by magnitude, and morphologically clean. Use this mode only when profiling confirms FPS is acceptable.
+- If `flow_gating.method: farneback`, compute dense flow via `cv2.calcOpticalFlowFarneback` [Farnebäck 2003] on downscaled grayscale frames with modest window sizes and 2–3 pyramid levels, subtract the median flow vector, threshold by magnitude, and morphologically clean. Use this mode only when profiling confirms FPS is acceptable.
 
 ### Integration and rationale
 

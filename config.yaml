@@ -39,6 +39,10 @@ object_detection:
 tracking:
   tracker: "CSRT" # KCF (fast, recommended) or CSRT (accurate, better for small objects)
 
+  # Enable frame difference for motion detection in TRACKING mode
+  use_frame_difference_in_tracking: false # If true, use frame difference instead of background subtraction when tracking
+  frame_difference_threshold: 30 # Sensitivity threshold for frame difference (0-255, lower = more sensitive)
+
   # Norfair Multi-Object Tracking (Detection Mode)
   norfair:
     distance_threshold: 50 # Maximum pixels for object association

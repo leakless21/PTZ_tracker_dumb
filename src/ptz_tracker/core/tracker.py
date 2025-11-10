@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 from norfair import Detection, Tracker
 from loguru import logger
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any, Union
 from enum import Enum
 
 
@@ -83,6 +83,12 @@ class ObjectTracker:
         self.tracked_objects = []
         # Internal counter for optional reinforcement cadence can be managed by caller
 
+        # Frame difference for tracking mode
+        self.prev_frame_gray = None
+        self.use_frame_diff_in_tracking = config["tracking"].get(
+            "use_frame_difference_in_tracking", False
+        )
+
     def update_background_subtraction(self, frame: np.ndarray) -> np.ndarray:
         """Apply background subtraction to frame.
 
@@ -104,16 +110,95 @@ class ObjectTracker:
         Returns:
             Cleaned binary mask
         """
-        # Opening: remove noise
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self.kernel, iterations=1)
-
-        # Closing: fill holes
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self.kernel, iterations=1)
-
-        # Binary threshold
+        # Binary threshold first
         threshold_value = self.config["mask_processing"]["threshold_value"]
         _, mask = cv2.threshold(mask, threshold_value, 255, cv2.THRESH_BINARY)
 
+        # Apply advanced motion mask cleaning
+        mask = self.clean_motion_mask(mask)
+
+        return mask
+
+    def clean_motion_mask(
+        self, mask: np.ndarray, min_area: Optional[int] = None
+    ) -> np.ndarray:
+        """Advanced motion mask cleaning for both frame difference and background subtraction.
+
+        Removes noise, fills holes, and filters small disconnected components.
+
+        Args:
+            mask: Raw motion mask (binary, 0-255)
+            min_area: Minimum component area in pixels (uses config if None)
+
+        Returns:
+            Cleaned motion mask with noise removed
+        """
+        # Determine minimum area threshold
+        if min_area is None:
+            min_area_val: int = int(self.config["object_detection"].get("min_area", 20))
+        else:
+            min_area_val = int(min_area)
+
+        # Step 1: Morphological opening to remove small noise
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self.kernel, iterations=1)
+
+        # Step 2: Morphological closing to fill small holes
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self.kernel, iterations=1)
+
+        # Step 3: Additional dilation to connect nearby components
+        kernel_dilate = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        mask = cv2.dilate(mask, kernel_dilate, iterations=1)
+
+        # Step 4: Remove small connected components (noise filtering)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        clean_mask = np.zeros_like(mask)
+
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area >= min_area_val:
+                cv2.drawContours(clean_mask, [contour], 0, 255, -1)
+
+        # Step 5: Final erosion to avoid over-dilation artifacts
+        kernel_erode = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        clean_mask = cv2.erode(clean_mask, kernel_erode, iterations=1)
+
+        return clean_mask
+
+    def compute_frame_difference_mask(
+        self, curr_frame: np.ndarray, threshold: int = 30, return_raw_diff: bool = False
+    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+        """Compute motion mask from frame difference.
+
+        Args:
+            curr_frame: Current frame (BGR)
+            threshold: Difference threshold (0-255)
+            return_raw_diff: If True, return tuple (mask, raw_diff), else just mask
+
+        Returns:
+            If return_raw_diff=False: Binary motion mask from frame difference
+            If return_raw_diff=True: Tuple of (binary_mask, raw_diff_before_threshold)
+        """
+        if self.prev_frame_gray is None:
+            # No previous frame, return empty
+            empty = np.zeros(self.frame_shape, dtype=np.uint8)
+            if return_raw_diff:
+                return empty, empty
+            return empty
+
+        curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_BGR2GRAY)
+        diff = cv2.absdiff(self.prev_frame_gray, curr_gray)
+        raw_diff = diff.copy()  # Store raw diff before thresholding
+
+        _, mask = cv2.threshold(diff, threshold, 255, cv2.THRESH_BINARY)
+
+        # Update previous frame for next iteration
+        self.prev_frame_gray = curr_gray
+
+        # Apply advanced motion mask cleaning
+        mask = self.clean_motion_mask(mask)
+
+        if return_raw_diff:
+            return mask, raw_diff
         return mask
 
     def detect_contours(self, mask: np.ndarray) -> Tuple[List[np.ndarray], set]:
@@ -418,6 +503,9 @@ class ObjectTracker:
     ) -> Optional[Tuple[int, int, int, int]]:
         """Attempt to redetect lost object.
 
+        Uses frame difference if in tracking mode (and configured), otherwise
+        falls back to background subtraction.
+
         Args:
             frame: Current frame
 
@@ -427,9 +515,15 @@ class ObjectTracker:
         if self.last_bbox is None:
             return None
 
-        # Background subtraction for redetection
-        fg_mask = self.update_background_subtraction(frame)
-        cleaned_mask = self.clean_mask(fg_mask)
+        # Use motion detection (frame difference or background subtraction)
+        if self.use_frame_diff_in_tracking:
+            fd_threshold = self.config["tracking"].get("frame_difference_threshold", 30)
+            cleaned_mask = self.compute_frame_difference_mask(
+                frame, threshold=fd_threshold
+            )
+        else:
+            fg_mask = self.update_background_subtraction(frame)
+            cleaned_mask = self.clean_mask(fg_mask)
 
         # Find contours
         valid_contours, _ = self.detect_contours(cleaned_mask)
@@ -507,7 +601,9 @@ class ObjectTracker:
         x, y, w, h = b
         return (x + w / 2.0, y + h / 2.0)
 
-    def _euclidean_distance(self, p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
+    def _euclidean_distance(
+        self, p1: Tuple[float, float], p2: Tuple[float, float]
+    ) -> float:
         return float(np.hypot(p1[0] - p2[0], p1[1] - p2[1]))
 
     def reinforce_with_detection(
@@ -515,7 +611,8 @@ class ObjectTracker:
     ) -> Optional[Tuple[int, int, int, int]]:
         """Use current detection to reinforce or correct the tracker bbox.
 
-        Runs background subtraction and contour detection on the given frame,
+        Runs motion detection (background subtraction or frame difference,
+        depending on config) and contour detection on the given frame,
         selects the best matching detection by IoU (or nearest center with
         size similarity as fallback), and returns a corrected bbox if it
         passes configured gates.
@@ -539,9 +636,18 @@ class ObjectTracker:
             self.config["tracking"]["recovery"].get("size_similarity_threshold", 0.5)
         )
 
-        # Perform detection on this frame
-        fg_mask = self.update_background_subtraction(frame)
-        cleaned_mask = self.clean_mask(fg_mask)
+        # Perform detection on this frame using frame difference or background subtraction
+        if self.use_frame_diff_in_tracking:
+            # Use frame difference for motion detection in tracking mode
+            fd_threshold = self.config["tracking"].get("frame_difference_threshold", 30)
+            cleaned_mask = self.compute_frame_difference_mask(
+                frame, threshold=fd_threshold
+            )
+        else:
+            # Use background subtraction (default)
+            fg_mask = self.update_background_subtraction(frame)
+            cleaned_mask = self.clean_mask(fg_mask)
+
         valid_contours, _ = self.detect_contours(cleaned_mask)
         if not valid_contours:
             return None
@@ -604,4 +710,5 @@ class ObjectTracker:
         self.tracked_object_id = None
         self.last_bbox = None
         self.loss_timestamp = 0.0
+        self.prev_frame_gray = None  # Reset frame difference history
         logger.info("Reset to DETECTION mode")
